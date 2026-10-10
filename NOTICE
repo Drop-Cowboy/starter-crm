@@ -1,0 +1,53 @@
+Drop Cowboy Starter CRM
+Copyright (c) 2026 Cowboy Concepts, LLC dba Drop Cowboy
+
+What the MIT license covers
+
+The MIT license in LICENSE covers only the files in this folder and its
+subfolders: the starter servers, the front-ends, the shared modules, the
+conformance suite, the tests and the documentation. You may copy, change and
+ship them under that license. The one exception is the icon shapes in
+shared/icons.svg, described below.
+
+What it does not cover
+
+When it runs, the starter loads Drop Cowboy Building Blocks (The Dock, the
+contact card, the pipeline board, the shared inbox, the campaign hub, the
+phone hub and others) from https://webforms.dropcowboy.com, and it calls Drop
+Cowboy APIs and services. Those scripts, APIs and services are proprietary to
+Drop Cowboy. They are not part of this starter, they are not licensed under MIT,
+and your use of them is governed by the Drop Cowboy Terms of Service:
+https://www.dropcowboy.com/terms
+
+The starter refers to Building Blocks by URL and loads them in the browser at
+runtime; the browser tests download them the same way. No Building Blocks code
+is included in this folder.
+
+Third-party packages
+
+The starter's package.json, requirements.txt and requirements-dev.txt files
+list open-source dependencies (for example Express, React, Flask). They are
+installed from their public registries under their own licenses and are not
+included in this folder.
+
+Icons
+
+The icon shapes in shared/icons.svg come from Lucide (https://lucide.dev).
+They are not covered by the MIT license above, but by Lucide's own license,
+reproduced here as it requires:
+
+ISC License
+
+Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

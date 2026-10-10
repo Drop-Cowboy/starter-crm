@@ -1,0 +1,21 @@
+# gitleaks settings for the Starter CRM: the default rules, minus the
+# placeholder tokens the docs and tests use on purpose.
+#
+#   gitleaks dir . --config .gitleaks.toml
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test JWTs whose signature is readable text (e.g. 'signature'), so they cannot be real tokens"
+regexTarget = "match"
+regexes = [
+    '''eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.(c2lnbmF0dXJl|c2ln|bW9jay1zaWduYXR1cmU)\b''',
+]
+
+[[allowlists]]
+description = "Example responses in the docs, with the token cut short"
+regexTarget = "line"
+regexes = [
+    '''"token": "eyJ[A-Za-z0-9_-]+\.\.\."''',
+]

@@ -1,0 +1,16 @@
+{
+  "name": "starter-crm-server-conformance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Language-neutral HTTP conformance suite for the Starter CRM server. See ../CONTRACT.md.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "test": "node run.js",
+    "test:node": "node run.js",
+    "test:python": "SERVER_CMD=\"python -m starter_crm\" SERVER_CWD=../python node run.js"
+  }
+}

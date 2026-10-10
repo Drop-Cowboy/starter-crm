@@ -1,0 +1,29 @@
+{
+  "name": "starter-crm-server-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Drop Cowboy Starter CRM server: mints site tokens and verifies webhooks. See ../CONTRACT.md.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "conformance": "node ../conformance/run.js"
+  },
+  "dependencies": {
+    "dotenv": "18.0.5",
+    "express": "5.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
+    "globals": "17.13.0",
+    "vitest": "5.0.3"
+  }
+}

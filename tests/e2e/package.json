@@ -1,0 +1,21 @@
+{
+  "name": "starter-crm-e2e",
+  "private": true,
+  "description": "Browser tests for the Starter CRM: both front-ends, on any starter server, against a fake Drop Cowboy.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:vanilla": "playwright test --project=vanilla",
+    "test:react": "playwright test --project=react",
+    "browsers": "playwright install chromium",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0"
+  }
+}
