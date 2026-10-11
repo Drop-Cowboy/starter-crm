@@ -1,0 +1,16 @@
+{
+  "name": "dropcowboy-starter-crm",
+  "private": true,
+  "description": "A contacts CRM built on Drop Cowboy Building Blocks: two servers, two front-ends, one contract.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "test": "node tests/run-all.mjs",
+    "test:fast": "node tests/run-all.mjs --fast",
+    "test:e2e": "node tests/run-all.mjs --only react:build,e2e:node:vanilla,e2e:node:react,e2e:python:vanilla,e2e:python:react",
+    "test:leaks": "node --test --test-reporter=spec tests/leak-check.test.js"
+  }
+}

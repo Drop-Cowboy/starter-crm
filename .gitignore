@@ -1,0 +1,28 @@
+# Secrets and agent-minted tokens
+.env
+.env.*
+!.env.example
+.dropcowboy/
+
+# Node. The repo root ignores lockfiles; this published sample pins its
+# dependencies, and its CI installs with npm ci.
+node_modules/
+dist/
+!package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Test output
+test-results/
+playwright-report/
+coverage/
+
+# Building Blocks downloaded by the browser tests. They are closed source:
+# never commit them.
+tests/e2e/.cdn-cache/

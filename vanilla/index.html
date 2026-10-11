@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" data-dc-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Starter CRM</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/shared/crm.css">
+    <script type="module" src="/app.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="app" id="app" data-layout="full" data-nav="collapsed" data-list="off" data-context="closed">
+        <header class="top">
+            <a class="brand" href="/contacts">
+                <span class="logo" aria-hidden="true">S</span>
+                <span><span class="bn">Starter CRM</span> <span class="bs">Built on Drop Cowboy Building Blocks</span></span>
+            </a>
+            <button class="cmdk" id="palette-button" type="button" aria-label="Search or run a command" aria-keyshortcuts="Meta+K Control+K">
+                <svg class="ic" aria-hidden="true" focusable="false"><use href="/shared/icons.svg#i-search"/></svg>
+                <span class="cl">Search or run a command…</span>
+                <kbd aria-hidden="true">⌘K</kbd>
+            </button>
+            <span class="sp"></span>
+            <button class="topbtn" id="activity-button" type="button" aria-controls="context" aria-expanded="false" aria-label="Activity">
+                <svg class="ic" aria-hidden="true" focusable="false"><use href="/shared/icons.svg#i-activity"/></svg>
+                <span class="tlb">Activity</span>
+                <span class="cnt" hidden></span>
+            </button>
+            <div class="account" id="account"></div>
+        </header>
+        <div id="banner"></div>
+        <div class="shell">
+            <nav data-region="nav" aria-label="Main"></nav>
+            <section data-region="list" aria-labelledby="contacts-heading"></section>
+            <main data-region="main" id="main" tabindex="-1">
+                <div class="page"><p class="hint" role="status">Loading…</p></div>
+            </main>
+            <aside data-region="context" id="context" aria-labelledby="context-heading">
+                <div class="ctx-h">
+                    <h2 id="context-heading">Context</h2>
+                    <span class="sp"></span>
+                    <button class="iconbtn" id="context-close" type="button" aria-label="Close panel">
+                        <svg class="ic" aria-hidden="true" focusable="false"><use href="/shared/icons.svg#i-chevron-right"/></svg>
+                    </button>
+                </div>
+                <div class="ctx-scroll">
+                    <div id="context-contact"></div>
+                    <section class="ctx-sec" aria-labelledby="activity-heading">
+                        <h3 class="ah" id="activity-heading">Activity</h3>
+                        <p class="hint" id="activity-status">Connecting to live events…</p>
+                        <ol class="feed" id="activity-list" aria-label="Recent activity"></ol>
+                        <p class="feed-empty" id="activity-empty">No activity yet. Webhooks appear here as Drop Cowboy sends them.</p>
+                    </section>
+                </div>
+                <div class="ctx-foot">
+                    <strong><span class="pulse" data-status="connecting" aria-hidden="true"></span><span id="activity-connection">Connecting…</span></strong>
+                    <span id="activity-mode"></span>
+                </div>
+            </aside>
+            <div class="drawer-scrim" hidden></div>
+        </div>
+    </div>
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+    <noscript>This starter needs JavaScript.</noscript>
+</body>
+</html>

@@ -1,0 +1,126 @@
+# Tests for the whole starter. Everything runs against fakes (see
+# tests/README.md), so no Drop Cowboy account or secret is needed; the browser
+# tests download only the pinned Building Blocks release. Secret scanning is
+# .github/workflows/secret-scan.yml.
+#
+# Actions are pinned to commit SHAs; the comment after each is its release.
+
+name: Starter CRM
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: starter-crm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Unit tests for shared code, both servers and the React app; the server
+  # contract suite against both servers; and the static leak checks. Runs on
+  # the oldest and newest Python the starter supports. setup-python publishes
+  # 3.9 for Ubuntu 24.04 but not later, hence the pinned runner image.
+  checks:
+    name: Unit and contract tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.13']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/node/package-lock.json
+            react/package-lock.json
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: server/python/requirements-dev.txt
+
+      - name: Run the tests
+        run: npm run test:fast
+        env:
+          PYTHON: python
+
+  # The app in Chromium: each server with each front-end, plus the Python
+  # server on 3.9 with the plain front-end.
+  e2e:
+    name: Browser (${{ matrix.server }} server, ${{ matrix.ui }}${{ matrix.server == 'python' && format(', Python {0}', matrix.python) || '' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [node, python]
+        ui: [vanilla, react]
+        python: ['3.13']
+        include:
+          - server: python
+            ui: vanilla
+            python: '3.9'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/node/package-lock.json
+            react/package-lock.json
+            tests/e2e/package-lock.json
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: matrix.server == 'python'
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: server/python/requirements-dev.txt
+
+      - name: Cache the Playwright browser
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/e2e/package-lock.json') }}
+
+      - name: Install Playwright and Chromium
+        working-directory: tests/e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run the browser tests
+        run: |
+          stages="e2e:${{ matrix.server }}:${{ matrix.ui }}"
+          if [ "${{ matrix.ui }}" = "react" ]; then stages="react:build,$stages"; fi
+          node tests/run-all.mjs --only "$stages"
+        env:
+          PYTHON: python
+          CI: 'true'
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-${{ matrix.server }}-${{ matrix.ui }}-py${{ matrix.python }}
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+          retention-days: 14
