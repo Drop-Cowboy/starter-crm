@@ -64,7 +64,7 @@ jobs:
           hadolint_base="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}"
           curl -fsSL -o hadolint-linux-x86_64 "$hadolint_base/hadolint-linux-x86_64"
           curl -fsSL -o hadolint-checksums.sha256 "$hadolint_base/checksums.sha256"
-          grep " hadolint-linux-x86_64\$" hadolint-checksums.sha256 | sha256sum -c -
+          grep -E " \*?hadolint-linux-x86_64\$" hadolint-checksums.sha256 | sha256sum -c -
           install -m 0755 hadolint-linux-x86_64 "$RUNNER_TEMP/hadolint"
 
           actionlint_archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
@@ -130,7 +130,7 @@ jobs:
       - name: Container tests
         run: node tests/run-all.mjs --only container:${{ matrix.server }}
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcd8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build the image for scanning
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -195,7 +195,7 @@ jobs:
           # Registry names are lowercase, and a fork publishes to its own namespace.
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}${{ matrix.suffix }}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcd8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:

@@ -86,9 +86,9 @@ describe('compose.yaml', () => {
         ['the Python server', ['--profile', 'python'], 'starter-crm-python']
     ]) {
         it('builds and serves ' + label + ' with secrets from files', async () => {
-            const up = compose([...args, 'up', '--build', '--detach', '--wait', '--wait-timeout', '120', service]);
-            assert.equal(up.status, 0, 'compose up failed:\n' + up.stdout + up.stderr);
             try {
+                const up = compose([...args, 'up', '--build', '--detach', '--wait', '--wait-timeout', '120', service]);
+                assert.equal(up.status, 0, 'compose up failed:\n' + up.stdout + up.stderr);
                 const base = 'http://127.0.0.1:' + port;
                 // Both servers use the same port in turn; a kept-alive connection would still point at the first.
                 const get = (route) => fetch(base + route, { headers: { connection: 'close' } });
@@ -133,9 +133,9 @@ describe('compose.yaml', () => {
                 return res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
             }
 
-            const first = compose([...args, 'up', '--build', '--detach', '--wait', '--wait-timeout', '120', service]);
-            assert.equal(first.status, 0, 'compose up failed:\n' + first.stdout + first.stderr);
             try {
+                const first = compose([...args, 'up', '--build', '--detach', '--wait', '--wait-timeout', '120', service]);
+                assert.equal(first.status, 0, 'compose up failed:\n' + first.stdout + first.stderr);
                 const delivered = await fetch(base + '/webhooks/dropcowboy', {
                     method: 'POST',
                     headers: { ...sync, 'content-type': 'application/json', 'x-signature': signature, 'x-timestamp': timestamp, 'x-signature-version': 'v1' },
@@ -182,9 +182,12 @@ describe('compose.yaml', () => {
                 const signature = 'sha256=' + crypto.createHmac('sha256', secretValues.DROPCOWBOY_WEBHOOK_SECRET).update(timestamp + '.' + body).digest('hex');
                 const sync = { connection: 'close' };
 
-                const up = compose([...args, 'up', '--build', '--detach', '--wait', '--wait-timeout', '180', web, worker, 'redis'], env);
-                assert.equal(up.status, 0, 'compose up failed:\n' + up.stdout + up.stderr);
                 try {
+                    const up = compose([...args, 'up', '--build', '--detach', '--wait', '--wait-timeout', '180', web, 'redis'], env);
+                    assert.equal(up.status, 0, 'compose up failed:\n' + up.stdout + up.stderr);
+                    // Not --wait: the worker disables the image's HTTP healthcheck, and `up --wait` fails on a container without one.
+                    const started = compose([...args, 'up', '--build', '--detach', worker], env);
+                    assert.equal(started.status, 0, 'compose up failed for the worker:\n' + started.stdout + started.stderr);
                     const delivered = await fetch(base + '/webhooks/dropcowboy', {
                         method: 'POST',
                         headers: { ...sync, 'content-type': 'application/json', 'x-signature': signature, 'x-timestamp': timestamp, 'x-signature-version': 'v1' },

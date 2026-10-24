@@ -20,7 +20,7 @@ request the starter makes.
 
 ## Run it
 
-Needs Node 22.12 or later.
+Needs Node 24 or later.
 
 ```bash
 cp ../../.env.example ../../.env   # then fill it in

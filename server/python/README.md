@@ -215,7 +215,7 @@ pip install -r requirements-dev.txt
 pytest                        # unit tests
 ruff check . && ruff format --check .
 
-# The contract suite, against a mock Drop Cowboy API (needs Node 22.12+).
+# The contract suite, against a mock Drop Cowboy API (needs Node 24+).
 # Run it with this virtualenv active so `python` is the venv's.
 cd ../conformance && npm run test:python
 ```

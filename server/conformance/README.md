@@ -4,7 +4,7 @@ One HTTP test suite that every Starter CRM server must pass, whatever language i
 is written in. It is what keeps the Node and Python servers identical, so the
 front-ends never need to know which one they are talking to.
 
-It needs Node 22.12 or later and has no dependencies. It never talks to the real
+It needs Node 24 or later and has no dependencies. It never talks to the real
 Drop Cowboy API and needs no credentials.
 
 ## Run it
