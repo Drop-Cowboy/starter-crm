@@ -6,7 +6,8 @@ import { test, expect } from '../support/test.js';
 
 test.use({ serverMode: 'mcp-session' });
 
-test.describe('mcp-session mode without a session file', () => {
+// @fake-only: a server mode that needs no Drop Cowboy account at all.
+test.describe('mcp-session mode without a session file @fake-only', () => {
     test('tells the developer how to get a session', async ({ page, app, dropcowboy }) => {
         await app.goto('/setup');
 

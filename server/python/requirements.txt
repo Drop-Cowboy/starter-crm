@@ -1,5 +1,19 @@
 # Runtime dependencies, pinned. Calls to Drop Cowboy use the standard
-# library (urllib, hmac), so this is the whole list.
+# library (urllib, hmac). PyJWT verifies OIDC tokens (DC_IDENTITY=oidc) and
+# onepassword-sdk reads 1Password (DC_SECRETS=1password); each is imported
+# lazily, so it costs nothing unless that provider is chosen. The event store
+# and queue clients (psycopg for Postgres, redis and BullMQ for Redis) are the
+# same: each is imported only when DC_STORE, DC_FANOUT or DC_WEBHOOKS names it. So
+# is boto3, which only the dynamodb store and data provider, the sqs mode and the
+# aws-secrets-manager and aws-ssm secrets providers load.
 Flask==3.1.3
 Werkzeug==3.1.9
-python-dotenv==1.2.1
+python-dotenv==1.2.4
+gunicorn==23.0.0
+PyJWT[crypto]==2.15.1
+onepassword-sdk==0.4.1
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+redis==8.1.0
+bullmq==3.3.3
+boto3==1.43.112

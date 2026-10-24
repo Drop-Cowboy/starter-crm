@@ -1,0 +1,236 @@
+# Container images: lint the build files, build both images, run the container
+# tests and a vulnerability scan on them, and on a version tag publish them to
+# GitHub Container Registry with an SBOM and a build-provenance attestation.
+#
+#   pull request, push to main, every Monday   lint, build, test, scan
+#   a tag such as v1.2.3                       all of that, then publish
+#
+# Published images, for a repository <owner>/starter-crm:
+#   ghcr.io/<owner>/starter-crm          the Node server    :1.2.3  :1  :latest
+#   ghcr.io/<owner>/starter-crm-python   the Python server  :1.2.3  :1  :latest
+# Every tag is immutable except :1 and :latest, which move to the newest release.
+# Roll back by deploying the previous :x.y.z.
+#
+# Supply chain, each one a gate and not a report:
+# - Actions are pinned to commit SHAs (the comment after each is its release) and
+#   the workflow has no permission it does not use. Publishing uses GITHUB_TOKEN
+#   only: no personal token exists anywhere.
+# - Base images are pinned by digest in the Dockerfiles.
+# - grype fails the build on any high or critical vulnerability that has a fix.
+#   One without a fix cannot be acted on, so it is listed and not blocked. The
+#   Monday run catches vulnerabilities disclosed after the last release.
+# - The SBOM and a SLSA provenance statement are attached to each image in the
+#   registry, and GitHub signs a build-provenance attestation for each digest:
+#   gh attestation verify oci://ghcr.io/<owner>/starter-crm:1.2.3 --owner <owner>
+
+name: Images
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  GITLEAKS_VERSION: 8.30.1
+  GRYPE_VERSION: 0.120.1
+  ACTIONLINT_VERSION: 1.7.12
+  HADOLINT_VERSION: 2.15.1
+
+jobs:
+  lint:
+    name: Lint Dockerfiles, workflows and scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install hadolint and actionlint
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          hadolint_base="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}"
+          curl -fsSL -o hadolint-linux-x86_64 "$hadolint_base/hadolint-linux-x86_64"
+          curl -fsSL -o hadolint-checksums.sha256 "$hadolint_base/checksums.sha256"
+          grep " hadolint-linux-x86_64\$" hadolint-checksums.sha256 | sha256sum -c -
+          install -m 0755 hadolint-linux-x86_64 "$RUNNER_TEMP/hadolint"
+
+          actionlint_archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          actionlint_base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          curl -fsSL -O "$actionlint_base/$actionlint_archive"
+          curl -fsSL -O "$actionlint_base/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          grep " ${actionlint_archive}\$" "actionlint_${ACTIONLINT_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$actionlint_archive" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: hadolint
+        run: hadolint Dockerfile server/python/Dockerfile
+
+      - name: actionlint
+        run: actionlint .github/workflows/*.yml
+
+      - name: shellcheck
+        run: shellcheck scripts/lib/container-server.sh
+
+  # Builds each image, runs the container tests against them (conformance suite
+  # inside a container, smoke, image contents) and scans them.
+  images:
+    name: Test and scan (${{ matrix.server }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [node, python]
+        include:
+          - server: node
+            dockerfile: Dockerfile
+          - server: python
+            dockerfile: server/python/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Install gitleaks and grype
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          gitleaks_archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          gitleaks_base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -fsSL -O "$gitleaks_base/$gitleaks_archive"
+          curl -fsSL -O "$gitleaks_base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " ${gitleaks_archive}\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$gitleaks_archive" gitleaks
+
+          grype_archive="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          grype_base="https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}"
+          curl -fsSL -O "$grype_base/$grype_archive"
+          curl -fsSL -O "$grype_base/grype_${GRYPE_VERSION}_checksums.txt"
+          grep " ${grype_archive}\$" "grype_${GRYPE_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$grype_archive" grype
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Container tests
+        run: node tests/run-all.mjs --only container:${{ matrix.server }}
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcd8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image for scanning
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          push: false
+          tags: starter-crm-scan:${{ matrix.server }}
+
+      # --only-fixed: a vulnerability with no fixed version cannot be acted on.
+      - name: Scan for high and critical vulnerabilities that have a fix
+        run: grype "starter-crm-scan:${{ matrix.server }}" --only-fixed --fail-on high
+
+  compose:
+    name: Compose file
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: compose.yaml builds and serves both servers
+        run: node tests/run-all.mjs --only container:compose
+
+  publish:
+    name: Publish (${{ matrix.server }})
+    if: github.ref_type == 'tag'
+    needs: [lint, images, compose]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [node, python]
+        include:
+          - server: node
+            dockerfile: Dockerfile
+            suffix: ''
+          - server: python
+            dockerfile: server/python/Dockerfile
+            suffix: -python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the image
+        id: name
+        run: |
+          set -euo pipefail
+          # Registry names are lowercase, and a fork publishes to its own namespace.
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}${{ matrix.suffix }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcd8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out the tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=Starter CRM (${{ matrix.server }})
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

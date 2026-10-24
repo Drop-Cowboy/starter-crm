@@ -135,12 +135,27 @@ export function createContactsApi(options) {
 
     /**
      * Creates one contact. A contact with the same phone or email already
-     * existing is not an error: its empty fields are filled in and its id
-     * comes back with created: false.
+     * existing is not an error: nothing is written and its id comes back with
+     * created: false.
+     *
+     * Why the lookup comes first: Drop Cowboy matches an existing contact on
+     * email only, so a row with a known phone number and no email would be
+     * inserted as a second contact (seen against the live API). Looking up the
+     * email and then the phone before writing makes "already in your contacts"
+     * hold for both.
      * @param {Partial<Contact>} input
      * @returns {Promise<{ contact_id: string, created: boolean }>}
      */
     async function create(input) {
+        const email = prepare('email', input.email);
+        const phone = prepare('main_phone', input.main_phone);
+        for (const query of [email && { email }, phone && { phone }]) {
+            if (!query) continue;
+            const found = await search(query);
+            if (found.contacts.length) {
+                return { contact_id: found.contacts[0].id, created: false };
+            }
+        }
         const fields = [];
         const row = [];
         for (let i = 0; i < STANDARD_FIELDS.length; i++) {
@@ -317,6 +332,10 @@ export function normalizeContact(raw) {
     function field(type) {
         if (raw[type]) {
             return String(raw[type]);
+        }
+        // List rows from Drop Cowboy name the company field company_name.
+        if (type === 'company' && raw.company_name) {
+            return String(raw.company_name);
         }
         for (let i = 0; i < fieldData.length; i++) {
             if (fieldData[i].type === type && fieldData[i].value) {

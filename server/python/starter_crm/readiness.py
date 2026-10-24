@@ -7,7 +7,8 @@ reaching the browser.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from flask import g, jsonify
 
@@ -17,6 +18,15 @@ from .upstream import call_dropcowboy
 
 
 def readiness_view(config: Config) -> Callable:
+    """Builds the GET /api/dropcowboy/readiness view (the account checklist).
+
+    Args:
+        config: The loaded server config.
+
+    Returns:
+        A Flask view that asks Drop Cowboy what the account still needs.
+    """
+
     def get_readiness():
         result = call_dropcowboy(
             config, "GET", "/register/public/integration-readiness", access_token=g.get("access_token")
@@ -67,6 +77,10 @@ def pick_readiness(data: Any) -> dict:
         "allotment": allotment,
         "numbers": {"count": _number(numbers.get("count"))},
         "embed_resolve_contact_consent": d.get("embed_resolve_contact_consent") is True,
+        # True when the team has no carrier or no funds, so its session token
+        # reaches 555 test numbers only. Accounts that predate the sandbox
+        # omit it, which reads as False.
+        "sandbox_only": d.get("sandbox_only") is True,
     }
 
 

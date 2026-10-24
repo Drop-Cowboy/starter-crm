@@ -24,39 +24,59 @@ export function serverUnderTest() {
 }
 
 /** The .env each auth mode runs with. */
-function envFor(mode, { fakeUrl, secrets }) {
-    const common = { DROPCOWBOY_API_BASE: fakeUrl, DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret };
+function envFor(mode, { fakeUrl, secrets, live, issuerUrl, audience }) {
+    const siteId = (live && secrets.siteId) || SITE_ID;
+    // The specs open dozens of sessions from one address in a minute, so the
+    // limiter and the token cache stay out of the way here. Both have their own
+    // conformance cases (suites 14 and 15), where they are the thing under test.
+    const common = {
+        DROPCOWBOY_API_BASE: fakeUrl,
+        DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret,
+        DC_RATE_LIMIT: 'off',
+        DC_TOKEN_CACHE: 'off'
+    };
+    const server = {
+        ...common,
+        DC_AUTH_MODE: 'server',
+        DC_ENV: 'development',
+        DROPCOWBOY_API_KEY: secrets.apiKey,
+        DROPCOWBOY_API_SECRET: secrets.apiSecret,
+        DROPCOWBOY_SITE_ID: siteId,
+        STARTER_CRM_USER_ID
+    };
     if (mode === 'server') {
-        return {
-            ...common,
-            DC_AUTH_MODE: 'server',
-            DROPCOWBOY_API_KEY: secrets.apiKey,
-            DROPCOWBOY_API_SECRET: secrets.apiSecret,
-            DROPCOWBOY_SITE_ID: SITE_ID,
-            STARTER_CRM_USER_ID
-        };
+        return { ...server, DC_IDENTITY: 'dev' };
+    }
+    if (mode === 'passcode') {
+        return { ...server, DC_IDENTITY: 'passcode', DC_PASSCODE: secrets.passcode };
+    }
+    if (mode === 'oidc') {
+        // No STARTER_CRM_USER_ID: the user id comes from the token's subject.
+        const env = { ...server, DC_IDENTITY: 'oidc', DC_OIDC_ISSUER: issuerUrl, DC_OIDC_AUDIENCE: audience };
+        delete env.STARTER_CRM_USER_ID;
+        return env;
     }
     if (mode === 'login') {
-        return { ...common, DC_AUTH_MODE: 'login', DROPCOWBOY_SITE_ID: SITE_ID, AUTH0_CLIENT_ID: secrets.loginClientId };
+        return { ...common, DC_AUTH_MODE: 'login', DROPCOWBOY_SITE_ID: siteId, AUTH0_CLIENT_ID: secrets.loginClientId };
     }
     if (mode === 'login-not-configured') {
-        return { ...common, DC_AUTH_MODE: 'login', DROPCOWBOY_SITE_ID: SITE_ID };
+        return { ...common, DC_AUTH_MODE: 'login', DROPCOWBOY_SITE_ID: siteId };
     }
     if (mode === 'mcp-session') {
-        return { DC_AUTH_MODE: 'mcp-session' };
+        return { DC_AUTH_MODE: 'mcp-session', DC_RATE_LIMIT: 'off' };
     }
     throw new Error('Unknown server mode: ' + mode);
 }
 
-export async function startAppServer({ mode, ui, fakeUrl, secrets }) {
+export async function startAppServer({ mode, ui, fakeUrl, secrets, live = false, port: fixedPort = null, issuerUrl = null, audience = null }) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'starter-crm-e2e-'));
     copyFrontEnds(root, ui);
-    const env = envFor(mode, { fakeUrl, secrets });
+    const env = envFor(mode, { fakeUrl, secrets, live, issuerUrl, audience });
     fs.writeFileSync(path.join(root, '.env'),
         Object.entries(env).map(([key, value]) => key + '=' + value).join('\n') + '\n');
 
     const { command, cwd } = serverUnderTest();
-    const port = await freePort();
+    const port = fixedPort || await freePort();
     const proc = spawnServer({
         command,
         cwd,
@@ -68,6 +88,7 @@ export async function startAppServer({ mode, ui, fakeUrl, secrets }) {
     return {
         url,
         root,
+        port,
         output: proc.output,
         async stop() {
             await stopServer(proc);

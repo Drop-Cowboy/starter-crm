@@ -1,0 +1,89 @@
+/**
+ * The __LABEL__ module, made by `npm run new:module`.
+ *
+ * Where it sits: every folder under `src/modules/` with an `index.js` is a module. The routes below
+ * are served under `/api/modules/__MODULE__` for a signed-in user, and the data lives in the `__COLLECTION__` collection
+ * of the data API (`DC_DATA`), so each __ITEM__ belongs to the user who made it and nobody else can read or change it.
+ *
+ * Routes (creates and updates are POST, deletes are DELETE):
+ * - `GET    /api/modules/__MODULE__`      list this user's __ITEMS__, newest first. Filter: `done=true|false|all` (default all).
+ * - `POST   /api/modules/__MODULE__`      create one: `{ title, notes? }`.
+ * - `GET    /api/modules/__MODULE__/:id`  read one.
+ * - `POST   /api/modules/__MODULE__/:id`  change some fields of one.
+ * - `DELETE /api/modules/__MODULE__/:id`  delete one for good.
+ *
+ * The request shapes are in `server/schemas/__MODULE__.json`, shared with the Python server, so both reject the same
+ * input with `400 invalid_request` and the name of the field. Change the fields there and in both servers together.
+ *
+ * To react to Drop Cowboy, add `onEvent` handlers; `src/modules/deals/index.js` archives a deleted contact's deals.
+ */
+
+import { HttpError } from '../../errors.js';
+import { checkBody, loadSchemas } from '../../validate.js';
+
+/** The data API collection this module keeps its documents in. */
+const COLLECTION = '__COLLECTION__';
+
+const schemas = loadSchemas('__MODULE__');
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The error for a __ITEM__ that is not there, or is not this user's: the two look the same on purpose.
+ *
+ * @returns {HttpError} 404 `__ITEM_SNAKE___not_found`.
+ */
+function missing() {
+    return new HttpError(404, '__ITEM_SNAKE___not_found', 'No __ITEM__ with that id.');
+}
+
+/**
+ * Reads a __ITEM__ id from the path. Anything that is not a UUID cannot be one, so it never reaches the database.
+ *
+ * @param {Record<string, string>} params The route parameters.
+ * @returns {string} The id.
+ * @throws {HttpError} 404 for something that is not a UUID.
+ */
+function itemId(params) {
+    if (!UUID.test(params.id)) throw missing();
+    return params.id;
+}
+
+export default {
+    id: '__MODULE__',
+
+    routes(router) {
+        router.get('/', async (ctx) => {
+            checkBody(schemas.query, ctx.query);
+            const where = {};
+            if (ctx.query.done && ctx.query.done !== 'all') where.done = ctx.query.done === 'true';
+            return { __ITEMS_SNAKE__: await ctx.data.collection(COLLECTION).list({ where }) };
+        });
+
+        router.post('/', { body: schemas.create }, async (ctx) => {
+            const record = await ctx.data.collection(COLLECTION).insert({
+                title: ctx.body.title,
+                notes: ctx.body.notes ?? '',
+                done: false
+            });
+            return ctx.reply(201, { __ITEM_SNAKE__: record });
+        });
+
+        router.get('/:id', async (ctx) => {
+            const record = await ctx.data.collection(COLLECTION).get(itemId(ctx.params));
+            if (!record) throw missing();
+            return { __ITEM_SNAKE__: record };
+        });
+
+        router.post('/:id', { body: schemas.update }, async (ctx) => {
+            const record = await ctx.data.collection(COLLECTION).update(itemId(ctx.params), ctx.body);
+            if (!record) throw missing();
+            return { __ITEM_SNAKE__: record };
+        });
+
+        router.delete('/:id', async (ctx) => {
+            const id = itemId(ctx.params);
+            if (!await ctx.data.collection(COLLECTION).remove(id)) throw missing();
+            return { deleted: true, id };
+        });
+    }
+};

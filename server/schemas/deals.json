@@ -1,0 +1,38 @@
+{
+    "$comment": "The request bodies and the list filters (`query`) of the Deals module. Both servers read this file, so both reject the same input with the same message. Supported keywords: type, properties, required, additionalProperties (false only), enum, minLength, maxLength, minimum, maximum, pattern (matches the whole string), format (uuid), items, maxItems, minProperties.",
+    "create": {
+        "type": "object",
+        "required": ["title"],
+        "additionalProperties": false,
+        "properties": {
+            "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "contact_id": { "type": ["string", "null"], "format": "uuid" },
+            "amount_cents": { "type": "integer", "minimum": 0, "maximum": 1000000000000 },
+            "currency": { "type": "string", "pattern": "[A-Z]{3}" },
+            "stage": { "type": "string", "enum": ["lead", "qualified", "proposal", "won", "lost"] },
+            "notes": { "type": "string", "maxLength": 2000 }
+        }
+    },
+    "update": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+            "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "contact_id": { "type": ["string", "null"], "format": "uuid" },
+            "amount_cents": { "type": "integer", "minimum": 0, "maximum": 1000000000000 },
+            "currency": { "type": "string", "pattern": "[A-Z]{3}" },
+            "stage": { "type": "string", "enum": ["lead", "qualified", "proposal", "won", "lost"] },
+            "notes": { "type": "string", "maxLength": 2000 },
+            "archived": { "type": "boolean" }
+        }
+    },
+    "query": {
+        "type": "object",
+        "properties": {
+            "stage": { "type": "string", "enum": ["lead", "qualified", "proposal", "won", "lost"] },
+            "contact_id": { "type": "string", "format": "uuid" },
+            "archived": { "type": "string", "enum": ["true", "false", "all"] }
+        }
+    }
+}

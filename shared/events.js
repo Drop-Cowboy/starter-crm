@@ -13,6 +13,9 @@
 // passed on with { replayed: true }: show it, but do not announce it. Anything
 // a later connection brings that was not already seen was missed, so it is new.
 
+import { createFetchEventSource } from './fetch-event-source.js';
+import { getAuthHeader, hasAuthHeaderProvider } from './server-api.js';
+
 const FIRST_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30000;
 
@@ -39,7 +42,11 @@ const MAX_RETRY_MS = 30000;
  */
 export function connectEvents(options) {
     const url = options.url || '/api/events';
-    const EventSourceImpl = options.EventSourceImpl || globalThis.EventSource;
+    // The browser's EventSource cannot send an Authorization header, so when the
+    // page registered one (the oidc identity), the stream is read with fetch().
+    // Otherwise the plain EventSource carries the session cookie by itself.
+    const EventSourceImpl = options.EventSourceImpl
+        || (hasAuthHeaderProvider() ? createFetchEventSource({ getHeaders: getAuthHeader }) : globalThis.EventSource);
     const later = options.setTimeoutImpl || globalThis.setTimeout;
     const cancel = options.clearTimeoutImpl || globalThis.clearTimeout;
     const onStatus = options.onStatus || function () {};

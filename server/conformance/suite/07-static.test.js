@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { assertEnvelope, call, ctx, rawRequest } from '../lib/context.js';
+import zlib from 'node:zlib';
+import { assertEnvelope, call, ctx, rawBytes, rawRequest } from '../lib/context.js';
 
 const html = { headers: { accept: 'text/html,application/xhtml+xml' } };
 
@@ -45,6 +46,52 @@ describe('static files, front-ends present (login root)', () => {
             assert.ok(!res.text.includes('DROPCOWBOY_'), path + ' served the .env file');
             assert.ok(!res.text.includes(ctx.secrets.webhookSecret), path + ' leaked a secret');
         }
+    });
+});
+
+describe('static files, caching and compression', () => {
+    it('lets a content-hashed build asset be cached for a year, immutable', async () => {
+        const res = await rawBytes('login', { path: '/react/assets/index-Ab3dEf90.js' });
+        assert.equal(res.status, 200);
+        assert.equal(res.headers['cache-control'], 'public, max-age=31536000, immutable');
+    });
+
+    it('never makes a page, an unhashed file or a shared module immutable: they revalidate', async () => {
+        for (const path of ['/', '/react/', '/react/assets/logo.js', '/app.js', '/shared/dc-api.js']) {
+            const res = await rawBytes('login', { path, headers: { accept: 'text/html' } });
+            assert.equal(res.status, 200, path);
+            assert.equal(res.headers['cache-control'], 'no-cache', path);
+        }
+    });
+
+    it('answers a matching If-None-Match with 304 and no body', async () => {
+        const first = await rawBytes('login', { path: '/app.js' });
+        assert.ok(first.headers.etag, 'a file needs an ETag');
+        const second = await rawBytes('login', { path: '/app.js', headers: { 'if-none-match': first.headers.etag } });
+        assert.equal(second.status, 304);
+        assert.equal(second.bytes.length, 0);
+    });
+
+    it('gzips text of 1 KB or more when the browser accepts it, with Vary', async () => {
+        for (const path of ['/big.js', '/react/assets/index-Ab3dEf90.js']) {
+            const plain = await rawBytes('login', { path });
+            const packed = await rawBytes('login', { path, headers: { 'accept-encoding': 'gzip, deflate, br' } });
+            assert.equal(packed.status, 200, path);
+            assert.equal(packed.headers['content-encoding'], 'gzip', path);
+            assert.match(packed.headers.vary, /Accept-Encoding/i, path);
+            assert.equal(String(packed.bytes.length), packed.headers['content-length'], path);
+            assert.ok(packed.bytes.length < plain.bytes.length, path + ' did not get smaller');
+            assert.equal(zlib.gunzipSync(packed.bytes).toString(), plain.bytes.toString(), path);
+            assert.equal(plain.headers['content-encoding'], undefined, path + ' was compressed without being asked');
+            assert.match(plain.headers.vary, /Accept-Encoding/i, path + ' must Vary even when sent plain');
+        }
+    });
+
+    it('does not gzip when the browser refuses it with q=0, or for a file under 1 KB', async () => {
+        const refused = await rawBytes('login', { path: '/big.js', headers: { 'accept-encoding': 'gzip;q=0' } });
+        assert.equal(refused.headers['content-encoding'], undefined);
+        const small = await rawBytes('login', { path: '/app.js', headers: { 'accept-encoding': 'gzip' } });
+        assert.equal(small.headers['content-encoding'], undefined);
     });
 });
 

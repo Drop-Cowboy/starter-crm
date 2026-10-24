@@ -51,9 +51,10 @@ export function setupChecklist(readiness, local) {
         {
             id: 'connect_byoc',
             title: 'Connect your carrier (BYOC)',
-            help: 'Calls and texts run on your own carrier account, such as Twilio or Telnyx. '
-                + 'Until one is connected the session token for calling and texting cannot be minted (byoc_required). '
-                + 'The contacts pages use their own contacts token and work without one.',
+            help: 'Calls and texts to real numbers run on your own carrier account, such as Twilio or Telnyx. '
+                + 'Until one is connected you can still call and text 555 test numbers (+1 555 XXX XXXX), which '
+                + 'are free and never reach a real phone; an account without that sandbox gets byoc_required instead. '
+                + 'The contacts pages use their own contacts token and work without a carrier.',
             done: known ? !!(r.byoc && r.byoc.connected) : null,
             optional: false,
             link: { href: DASHBOARD + '/building-blocks', label: 'Connect a carrier' }
@@ -145,4 +146,53 @@ export function isReady(items) {
         }
     }
     return true;
+}
+
+/** How long a received event may wait before the Setup page calls it stuck: the outbox normally clears in seconds. */
+export const STUCK_AFTER_SECONDS = 300;
+
+/**
+ * @typedef {object} WebhookStatus  The fields GET /api/webhooks/status returns.
+ * @property {string} store
+ * @property {string} webhooks
+ * @property {number} max_attempts
+ * @property {number} received  Waiting for their handlers.
+ * @property {number} processed
+ * @property {number} failed  Used up every attempt.
+ * @property {number} oldest_received_age_seconds
+ */
+
+/**
+ * The checklist item for webhook handling, so a failed handler shows on the Setup page
+ * instead of only in the logs.
+ *
+ * @param {WebhookStatus | null} status  null when the server could not be asked.
+ * @returns {SetupItem}
+ */
+export function webhookItem(status) {
+    const base = { id: 'webhook_handlers', title: 'Webhook handling', optional: false, link: null };
+    if (!status) {
+        return Object.assign(base, { done: null, help: 'The server could not report on its event store just now. Reload to try again.' });
+    }
+    if (status.failed > 0) {
+        return Object.assign(base, {
+            done: false,
+            help: status.failed + (status.failed === 1 ? ' event' : ' events') + ' used all ' + status.max_attempts
+                + ' handler attempts and stopped. Run "npm run webhooks:failed" to list them and '
+                + '"npm run webhooks:replay -- <event_id>" (or "-- --all-failed") to run them again.'
+        });
+    }
+    if (status.received > 0 && status.oldest_received_age_seconds >= STUCK_AFTER_SECONDS) {
+        const minutes = Math.floor(status.oldest_received_age_seconds / 60);
+        return Object.assign(base, {
+            done: false,
+            help: status.received + (status.received === 1 ? ' event has' : ' events have') + ' waited for a handler, the oldest for '
+                + minutes + ' minutes. Check that a worker is running ("npm run worker", or DC_WORKER_IN_PROCESS on the web instances).'
+        });
+    }
+    return Object.assign(base, {
+        done: true,
+        help: 'Events are being handled: ' + status.processed + ' done, ' + status.received + ' waiting. Event store: ' + status.store
+            + ', webhook mode: ' + status.webhooks + '.'
+    });
 }

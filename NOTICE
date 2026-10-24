@@ -26,7 +26,10 @@ is included in this repository.
 Third-party packages
 
 The starter's package.json, requirements.txt and requirements-dev.txt files
-list open-source dependencies (for example Express, React, Flask). They are
+list open-source dependencies (for example Express, React, Flask, and, for
+the optional OIDC sign-in, jose for Node and PyJWT for Python, both MIT) and,
+for the optional 1Password secrets provider, @1password/sdk for Node and
+onepassword-sdk for Python (both MIT, by 1Password). They are
 installed from their public registries under their own licenses and are not
 included in this repository.
 

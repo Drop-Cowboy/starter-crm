@@ -27,6 +27,41 @@ function crmWithoutCarrier(overrides) {
 
 afterEach(cleanup);
 
+describe('contact page in sandbox mode', () => {
+    it('says what a call to a test number does, and describes Call and Text with it', async () => {
+        const crm = fakeCrm({
+            contacts: { get: vi.fn().mockResolvedValue(ADA) },
+            sandboxOnly: () => Promise.resolve(true)
+        });
+        renderPage(<ContactPage />, { crm, path: '/contacts/' + ADA.id, route: '/contacts/:id' });
+
+        const hint = await screen.findByText(/is a test number: a call answers/);
+        expect(hint.id).toBe('sandbox-hint');
+        expect(hint.textContent).toMatch(/never reaches a real phone/);
+        expect(screen.getByRole('button', { name: 'Call' }).getAttribute('aria-describedby')).toBe('sandbox-hint');
+        expect(screen.getByRole('button', { name: 'Text' }).getAttribute('aria-describedby')).toBe('sandbox-hint');
+    });
+
+    it('says a real number is refused until a carrier is connected', async () => {
+        const crm = fakeCrm({
+            contacts: { get: vi.fn().mockResolvedValue(Object.assign({}, ADA, { main_phone: '+447700900123' })) },
+            sandboxOnly: () => Promise.resolve(true)
+        });
+        renderPage(<ContactPage />, { crm, path: '/contacts/' + ADA.id, route: '/contacts/:id' });
+
+        expect(await screen.findByText(/555 test numbers only, so a call or text to this number is refused/)).toBeTruthy();
+    });
+
+    it('shows no hint outside sandbox mode', async () => {
+        const crm = fakeCrm({ contacts: { get: vi.fn().mockResolvedValue(ADA) } });
+        renderPage(<ContactPage />, { crm, path: '/contacts/' + ADA.id, route: '/contacts/:id' });
+
+        expect(await screen.findByRole('heading', { level: 1, name: 'Ada Lovelace' })).toBeTruthy();
+        expect(screen.queryByText(/is a test number/)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Call' }).getAttribute('aria-describedby')).toBeNull();
+    });
+});
+
 describe('contacts pages without a connected carrier', () => {
     it('shows the contact and its card when the session mint fails with byoc_required', async () => {
         const crm = crmWithoutCarrier();

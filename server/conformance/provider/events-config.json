@@ -1,0 +1,1943 @@
+{
+ "description": "Event-settings cases both servers must resolve identically. base env is added to every case (server mode, throwaway credentials).",
+ "base": {
+  "DC_AUTH_MODE": "server",
+  "DROPCOWBOY_API_KEY": "k",
+  "DROPCOWBOY_API_SECRET": "s",
+  "DROPCOWBOY_SITE_ID": "3f8a2c1e-9b4d-4e7a-8c2f-1d5e6a7b8c9d",
+  "DROPCOWBOY_WEBHOOK_SECRET": "w",
+  "STARTER_CRM_USER_ID": "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+ },
+ "cases": [
+  {
+   "env": {},
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_REDIS_URL": "redis://localhost:6379"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_STORE": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_STORE": "sqlite",
+    "DC_REDIS_URL": "redis://localhost:6379"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "local",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@localhost:5432/d"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "postgres",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DC_STORE": "postgres"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "postgres",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DC_STORE": "redis",
+    "DC_REDIS_URL": "redis://localhost:6379",
+    "DC_DATA": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "redis",
+    "fanout": "redis",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_STORE": "redis",
+    "DC_DATA": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "redis",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_STORE": "mongo"
+   },
+   "codes": [
+    "invalid_store"
+   ],
+   "events": {
+    "store": "mongo",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_STORE": "./custom-store.js",
+    "DC_DATA": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "./custom-store.js",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_FANOUT": "redis"
+   },
+   "codes": [
+    "store_not_shared"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "redis",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_FANOUT": "redis",
+    "DC_STORE": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "redis",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_FANOUT": "postgres",
+    "DC_STORE": "redis",
+    "DC_REDIS_URL": "redis://localhost:6379",
+    "DC_DATA": "sqlite"
+   },
+   "codes": [
+    "fanout_needs_postgres"
+   ],
+   "events": {
+    "store": "redis",
+    "fanout": "postgres",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_FANOUT": "carrier-pigeon"
+   },
+   "codes": [
+    "invalid_fanout"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "carrier-pigeon",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_FANOUT": "poll",
+    "DC_STORE": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "bullmq"
+   },
+   "codes": [
+    "store_not_shared"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "bullmq",
+    "DC_STORE": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "local",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "bullmq",
+    "DC_STORE": "sqlite",
+    "DC_REDIS_URL": "redis://localhost:6379"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "local",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "inline"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "inline",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WORKER_IN_PROCESS": "off"
+   },
+   "codes": [
+    "worker_needs_fanout",
+    "worker_needs_shared_store"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": false,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WORKER_IN_PROCESS": "off",
+    "DC_STORE": "sqlite"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": false,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_WORKER_IN_PROCESS": "off",
+    "DC_STORE": "sqlite",
+    "DC_FANOUT": "poll"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": false,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "DC_WORKER_IN_PROCESS": "sometimes"
+   },
+   "codes": [
+    "invalid_worker_in_process"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_EVENT_RETENTION_HOURS": "0"
+   },
+   "codes": [
+    "invalid_event_retention"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_EVENT_RETENTION_HOURS": "9000"
+   },
+   "codes": [
+    "invalid_event_retention"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_EVENT_RETENTION_HOURS": "24"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 24,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_EVENTS_MAX_STREAM_SECONDS": "-1"
+   },
+   "codes": [
+    "invalid_max_stream_seconds"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_EVENTS_MAX_STREAM_SECONDS": "270"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 270,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_FANOUT_POLL_MS": "50"
+   },
+   "codes": [
+    "invalid_fanout_poll"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_OUTBOX_POLL_MS": "5000"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 5000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOK_MAX_ATTEMPTS": "0"
+   },
+   "codes": [
+    "invalid_webhook_attempts"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOK_MAX_ATTEMPTS": "3"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 3,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOK_HANDLER_BUDGET_MS": "9000"
+   },
+   "codes": [
+    "invalid_handler_budget"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOK_HANDLER_BUDGET_MS": "2000"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 2000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOK_HANDLERS": "/abs/handlers.js"
+   },
+   "codes": [
+    "invalid_webhook_handlers"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": "/abs/handlers.js",
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOK_HANDLERS": "./handlers.js"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": "./handlers.js",
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_STORE": "redis",
+    "DC_REDIS_URL": "redis://localhost:6379",
+    "DC_DATA": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db:5432/x"
+   },
+   "codes": [],
+   "events": {
+    "store": "redis",
+    "fanout": "redis",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DC_STORE": "redis",
+    "DC_REDIS_URL": "redis://localhost:6379"
+   },
+   "codes": [
+    "data_provider_required"
+   ],
+   "events": {
+    "store": "redis",
+    "fanout": "redis",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_DATA": "mongo"
+   },
+   "codes": [
+    "invalid_data"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_DATA": "./my-data.js"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "./my-data.js"
+  },
+  {
+   "env": {
+    "DC_STORE": "dynamodb"
+   },
+   "codes": [],
+   "events": {
+    "store": "dynamodb",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "dynamodb",
+    "DC_SQS_QUEUE_URL": "https://queue.example.test/starter-crm-webhooks"
+   },
+   "codes": [],
+   "events": {
+    "store": "dynamodb",
+    "fanout": "poll",
+    "webhooks": "sqs",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "dynamodb",
+    "DC_REDIS_URL": "redis://localhost:6379"
+   },
+   "codes": [],
+   "events": {
+    "store": "dynamodb",
+    "fanout": "redis",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "dynamodb",
+    "DC_WEBHOOKS": "sqs"
+   },
+   "codes": [],
+   "events": {
+    "store": "dynamodb",
+    "fanout": "poll",
+    "webhooks": "sqs",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "dynamodb",
+    "DC_WORKER_IN_PROCESS": "off"
+   },
+   "codes": [],
+   "events": {
+    "store": "dynamodb",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": false,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "dynamodb",
+    "DC_WORKER_IN_PROCESS": "off",
+    "DC_FANOUT": "poll"
+   },
+   "codes": [],
+   "events": {
+    "store": "dynamodb",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": false,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "redis",
+    "DC_REDIS_URL": "redis://localhost:6379",
+    "DC_DATA": "dynamodb"
+   },
+   "codes": [],
+   "events": {
+    "store": "redis",
+    "fanout": "redis",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@localhost:5432/d",
+    "DC_DATA": "dynamodb"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "postgres",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "sqs"
+   },
+   "codes": [
+    "store_not_shared"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "sqs",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_DATA": "dynamodb"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "dynamodb"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_store"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "sqlite",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_store"
+   ],
+   "events": {
+    "store": "sqlite",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_REDIS_URL": "redis://localhost:6379",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "redis",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_FANOUT": "postgres",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_FANOUT": "local",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_fanout"
+   ],
+   "events": {
+    "store": "postgres",
+    "fanout": "local",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "store",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_webhooks_store"
+   ],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "bullmq",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_worker"
+   ],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "sqs",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_worker"
+   ],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "sqs",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "bullmq",
+    "DC_WORKER_IN_PROCESS": "off",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "bullmq",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": false,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "inline",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "inline",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "qstash",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "qstash",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_EVENTS_MAX_STREAM_SECONDS": "120",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 120,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_EVENTS_MAX_STREAM_SECONDS": "0",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "NETLIFY": "true",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_store"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "poll",
+    "webhooks": "netlify-async",
+    "retention": 72,
+    "stream": 25,
+    "keepalive": 5,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "NETLIFY": "true",
+    "NETLIFY_DB_URL": "postgres://u:p@db-pooler.example.test/crm?sslmode=require",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "netlify-async",
+    "retention": 72,
+    "stream": 25,
+    "keepalive": 5,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "NETLIFY": "true",
+    "NETLIFY_DB_URL": "postgres://u:p@db-pooler.example.test/crm?sslmode=require",
+    "DC_WEBHOOKS": "store",
+    "DC_ENV": "development"
+   },
+   "codes": [
+    "serverless_webhooks_store"
+   ],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 25,
+    "keepalive": 5,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "NETLIFY": "true",
+    "NETLIFY_DB_URL": "postgres://u:p@db-pooler.example.test/crm?sslmode=require",
+    "DC_EVENTS_MAX_STREAM_SECONDS": "20",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "netlify-async",
+    "retention": 72,
+    "stream": 20,
+    "keepalive": 5,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "NETLIFY_DB_URL": "postgres://u:p@db-pooler.example.test/crm?sslmode=require",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "NETLIFY": "true",
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "qstash",
+    "DC_ENV": "development"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "qstash",
+    "retention": 72,
+    "stream": 25,
+    "keepalive": 5,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "qstash"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "postgres",
+    "webhooks": "qstash",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DC_STORE": "postgres",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "vercel-queue"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "postgres",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "qstash"
+   },
+   "codes": [
+    "store_not_shared"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "qstash",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_WEBHOOKS": "vercel-queue"
+   },
+   "codes": [
+    "store_not_shared"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "DC_STORE": "sqlite",
+    "DC_WEBHOOKS": "qstash"
+   },
+   "codes": [],
+   "events": {
+    "store": "sqlite",
+    "fanout": "local",
+    "webhooks": "qstash",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "VERCEL": "1"
+   },
+   "codes": [
+    "production_dev_identity",
+    "serverless_store"
+   ],
+   "events": {
+    "store": "memory",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_IDENTITY": "passcode",
+    "DC_PASSCODE": "a-long-enough-passcode"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "VERCEL": "1",
+    "DC_DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_STORE": "sqlite",
+    "DC_IDENTITY": "passcode",
+    "DC_PASSCODE": "a-long-enough-passcode"
+   },
+   "codes": [
+    "serverless_store"
+   ],
+   "events": {
+    "store": "sqlite",
+    "fanout": "poll",
+    "webhooks": "vercel-queue",
+    "retention": 72,
+    "stream": 290,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "sqlite"
+  },
+  {
+   "env": {
+    "NETLIFY": "true",
+    "DATABASE_URL": "postgres://u:p@db.example.test/crm",
+    "DC_WEBHOOKS": "qstash",
+    "DC_IDENTITY": "passcode",
+    "DC_PASSCODE": "a-long-enough-passcode"
+   },
+   "codes": [],
+   "events": {
+    "store": "postgres",
+    "fanout": "poll",
+    "webhooks": "qstash",
+    "retention": 72,
+    "stream": 25,
+    "keepalive": 5,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "postgres"
+  },
+  {
+   "env": {
+    "DATABASE_URL": "postgres://u:p@db.example.test/crm"
+   },
+   "codes": [],
+   "events": {
+    "store": "memory",
+    "fanout": "local",
+    "webhooks": "store",
+    "retention": 72,
+    "stream": 0,
+    "keepalive": 25,
+    "fpoll": 1000,
+    "opoll": 1000,
+    "attempts": 8,
+    "budget": 3000,
+    "handlers": null,
+    "worker": true,
+    "sqlite": "data/starter-crm.sqlite"
+   },
+   "data": "memory"
+  }
+ ]
+}

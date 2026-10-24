@@ -13,6 +13,8 @@ test.describe('Setup page', () => {
         await expect(checklist.locator('#connect_byoc')).toContainText('Connect your carrier (BYOC)');
         await expect(checklist.locator('#site_id')).toContainText('A site id for this app');
 
+        await expect(page.locator('#webhook_handlers')).toContainText('Events are being handled');
+
         await expectAccessible(page);
     });
 });

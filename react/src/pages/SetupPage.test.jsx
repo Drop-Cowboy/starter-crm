@@ -38,6 +38,35 @@ describe('SetupPage', () => {
         expect(await screen.findByText('Session token: ready')).toBeTruthy();
     });
 
+    it('explains sandbox mode when readiness reports sandbox_only', async () => {
+        const readiness = Object.assign({}, READY_EXCEPT_BYOC, { sandbox_only: true });
+        const crm = fakeCrm({ readiness: () => Promise.resolve(readiness) });
+        renderPage(<SetupPage />, { crm });
+
+        const title = await screen.findByRole('heading', { name: 'Sandbox: test numbers only' });
+        expect(title.closest('.notice').textContent).toMatch(/never ring a real phone/);
+        expect(await screen.findByText('Session token: ready for test numbers')).toBeTruthy();
+        expect(screen.queryByText('Session token: ready')).toBeNull();
+        expect(statusOf('Connect your carrier (BYOC)')).toBe('To do');
+    });
+
+    it('shows no sandbox notice when readiness does not report sandbox_only', async () => {
+        const crm = fakeCrm({ readiness: () => Promise.resolve(READY_EXCEPT_BYOC) });
+        renderPage(<SetupPage />, { crm });
+
+        expect(await screen.findByText('Session token: ready')).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Sandbox: test numbers only' })).toBeNull();
+    });
+
+    it('shows failed webhook handlers as a to-do', async () => {
+        const status = { store: 'sqlite', webhooks: 'store', max_attempts: 8, received: 0, processed: 3, failed: 1, oldest_received_age_seconds: 0 };
+        const crm = fakeCrm({ webhookStatus: () => Promise.resolve(status) });
+        renderPage(<SetupPage />, { crm });
+
+        expect(await screen.findByText(/1 event used all 8 handler attempts/)).toBeTruthy();
+        expect(statusOf('Webhook handling')).toBe('To do');
+    });
+
     it('asks for sign-in setup when login mode has no client id', async () => {
         const crm = fakeCrm({
             config: { auth_mode: 'login', site_id: null },

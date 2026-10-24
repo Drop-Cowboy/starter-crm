@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createEventStore } from '../src/events.js';
 import { pickReadiness } from '../src/readiness.js';
 import { API_KEY, API_SECRET, fakeFetch, jsonResponse, makeConfig, startApp } from './helpers.js';
 
@@ -69,8 +68,15 @@ describe('pickReadiness', () => {
             funds: { available: 12.5, funds_ok: true },
             allotment: { sms: { remaining: 90, cap: 100 }, email: { remaining: 5, cap: 5 } },
             numbers: { count: 2 },
-            embed_resolve_contact_consent: true
+            embed_resolve_contact_consent: true,
+            sandbox_only: false
         });
+    });
+
+    it('passes sandbox_only through, and only an explicit true counts', () => {
+        expect(pickReadiness({ sandbox_only: true }).sandbox_only).toBe(true);
+        expect(pickReadiness({ sandbox_only: 'true' }).sandbox_only).toBe(false);
+        expect(pickReadiness({ sandbox_only: 1 }).sandbox_only).toBe(false);
     });
 
     it('fills safe defaults when upstream omits fields, including the consent setting', () => {
@@ -82,30 +88,8 @@ describe('pickReadiness', () => {
             funds: { available: 0, funds_ok: false },
             allotment: {},
             numbers: { count: 0 },
-            embed_resolve_contact_consent: false
+            embed_resolve_contact_consent: false,
+            sandbox_only: false
         });
-    });
-});
-
-describe('createEventStore', () => {
-    it('bounds events and seen ids, and replays after a known id', () => {
-        const store = createEventStore({ maxEvents: 2, maxSeenIds: 3 });
-        for (const id of ['a', 'b', 'c', 'd']) store.add({ event_id: id });
-
-        expect(store.since(null).map((e) => e.event_id)).toEqual(['c', 'd']);
-        expect(store.since('c').map((e) => e.event_id)).toEqual(['d']);
-        expect(store.since('a').map((e) => e.event_id)).toEqual(['c', 'd']);
-        expect(store.hasSeen('a')).toBe(false);
-        expect(store.hasSeen('b')).toBe(true);
-    });
-
-    it('notifies subscribers until they unsubscribe', () => {
-        const store = createEventStore();
-        const got = [];
-        const unsubscribe = store.subscribe((e) => got.push(e.event_id));
-        store.add({ event_id: 'a' });
-        unsubscribe();
-        store.add({ event_id: 'b' });
-        expect(got).toEqual(['a']);
     });
 });

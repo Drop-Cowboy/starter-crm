@@ -14,7 +14,8 @@ const EXPECTED = {
         dialer_minutes: { remaining: 100, cap: 100 }
     },
     numbers: { count: 1 },
-    embed_resolve_contact_consent: true
+    embed_resolve_contact_consent: true,
+    sandbox_only: false
 };
 
 const PRIVATE = ['9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b', 'developer-plan', '+13125550142', '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f'];
@@ -56,6 +57,16 @@ describe('GET /api/dropcowboy/readiness', () => {
             for (const leaked of PRIVATE) {
                 assert.ok(!res.text.includes(leaked), 'readiness leaked ' + leaked);
             }
+        });
+    }
+
+    for (const mode of ['server', 'login']) {
+        it(mode + ': passes sandbox_only through for a team that reaches 555 test numbers only', async () => {
+            await mockScenario('readiness', 'sandbox_only');
+            const res = await readiness(mode);
+            assert.equal(res.status, 200);
+            assert.equal(res.body.sandbox_only, true);
+            assert.equal(res.body.byoc.connected, false);
         });
     }
 

@@ -4,6 +4,10 @@ import { toE164 } from './format.js';
 // localStorage: never a token, a sign-in, or anything from /api/config.
 
 const BUSINESS_NUMBER_KEY = 'starter-crm.business-number';
+const THEME_KEY = 'starter-crm.theme';
+
+/** "system" follows the operating system's light or dark setting. */
+export const THEME_CHOICES = ['system', 'light', 'dark'];
 
 /**
  * The number texts are sent from, as E.164, or '' when not chosen yet.
@@ -24,4 +28,22 @@ export function setBusinessNumber(value, storage) {
         store.removeItem(BUSINESS_NUMBER_KEY);
     }
     return number;
+}
+
+/** The theme this browser chose: one of THEME_CHOICES, "system" when none was saved. */
+export function getThemeChoice(storage) {
+    const store = storage || globalThis.localStorage;
+    const saved = store.getItem(THEME_KEY);
+    return THEME_CHOICES.includes(saved) ? saved : 'system';
+}
+
+/** Saves the choice and returns it. "system", or anything unknown, forgets it. */
+export function setThemeChoice(value, storage) {
+    const store = storage || globalThis.localStorage;
+    if (value === 'light' || value === 'dark') {
+        store.setItem(THEME_KEY, value);
+        return value;
+    }
+    store.removeItem(THEME_KEY);
+    return 'system';
 }

@@ -20,7 +20,7 @@ in rendering, never in how they talk to Drop Cowboy.
 | `widgets.js` | Hands each Building Block the token for its purpose: `contacts` for the contact card and pipeline, the Dock's `session` for the inbox, `campaigns` and `phone` for their hubs. |
 | `events.js`, `activity.js` | Live webhooks from `/api/events` (Server-Sent Events) plus Dock events, as one activity list. |
 | `errors.js` | One place that turns every error code into a plain-language explanation and a fix. |
-| `setup.js`, `settings.js` | The setup checklist, and the business number (the only thing kept in `localStorage`). |
+| `setup.js`, `settings.js` | The setup checklist, plus the business number and the theme choice (the only things kept in `localStorage`). |
 | `format.js` | Names, phone numbers, dates. |
 | `crm.css` | The one stylesheet both apps use. |
 

@@ -5,28 +5,33 @@ import { test, expect } from '../support/test.js';
 // What the user sees when Drop Cowboy says no. Each refusal should explain
 // itself and leave the rest of the CRM working.
 
-test.describe('A team with no carrier connected', () => {
+// @fake-only: the live E2E team has no carrier, but every account now has the
+// sandbox, so Drop Cowboy gives it a calling token for 555 test numbers
+// instead of refusing with byoc_required (sandbox.spec.js covers that). An
+// account without the sandbox still gets this refusal, which the fake plays.
+test.describe('A team with no carrier connected @fake-only', () => {
     test.beforeEach(({ dropcowboy }) => {
-        // Drop Cowboy refuses calling tokens until a carrier (BYOC) is connected.
         dropcowboy.refuseMints('dialer:webrtc', 'byoc_required');
     });
 
-    test('still lists contacts, and explains why calling is unavailable', async ({ page, app, dropcowboy }) => {
+    test('still lists contacts, and explains why calling is unavailable', async ({ page, app, dropcowboy, crm }) => {
+        const ada = await crm.person('ada');
         await app.goto('/contacts');
 
-        await expect(page.getByRole('list', { name: 'Contacts' }).getByRole('link', { name: 'Ada Lovelace' })).toBeVisible();
+        await expect(page.getByRole('list', { name: 'Contacts' }).getByRole('link', { name: ada.full_name })).toBeVisible();
         const banner = page.locator('.banner');
         await expect(banner).toContainText('Connect your carrier');
         await expect(banner.getByRole('link', { name: 'Setup: carrier' })).toHaveAttribute('href', app.path('/setup#connect_byoc'));
-        expect(dropcowboy.mintsFor('dialer:webrtc contacts').length).toBeGreaterThan(0);
+        if (crm.fake) expect(dropcowboy.mintsFor('dialer:webrtc contacts').length).toBeGreaterThan(0);
         await expectAccessible(page);
     });
 
-    test('still shows a contact and its card', async ({ page, app }) => {
-        await app.goto('/contacts/' + ADA.contact_id);
+    test('still shows a contact and its card', async ({ page, app, crm }) => {
+        const ada = await crm.person('ada');
+        await app.goto('/contacts/' + ada.contact_id);
 
-        await expect(page.getByRole('heading', { name: 'Ada Lovelace', level: 1 })).toBeVisible();
-        await expect(page.locator('dc-contact-card')).toContainText('Asked for a callback next week.');
+        await expect(page.getByRole('heading', { name: ada.full_name, level: 1 })).toBeVisible();
+        await expect(page.locator('dc-contact-card')).toContainText(ada.full_name);
         await expect(page.locator('.banner')).toContainText('Connect your carrier');
     });
 
@@ -44,7 +49,8 @@ test.describe('A team with no carrier connected', () => {
 });
 
 test.describe('Texting a contact without consent', () => {
-    test('shows the consent guidance', async ({ page, app, dropcowboy }) => {
+    // @fake-only: sending a text is never done against a live account.
+    test('shows the consent guidance @fake-only', async ({ page, app, dropcowboy }) => {
         dropcowboy.refuseTexts('consent_required');
         await app.useBusinessNumber(BUSINESS_NUMBER);
         await app.goto('/contacts/' + ADA.contact_id);

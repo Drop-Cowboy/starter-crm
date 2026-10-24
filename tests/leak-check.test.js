@@ -20,7 +20,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const SKIP_DIRS = new Set([
     'node_modules', '.venv', 'venv', 'dist', 'coverage', 'test-results', 'playwright-report',
-    '__pycache__', '.pytest_cache', '.ruff_cache', '.git', '.dropcowboy', '.cdn-cache'
+    '__pycache__', '.pytest_cache', '.ruff_cache', '.git', '.dropcowboy', '.cdn-cache', '.next', '.vercel'
 ]);
 const BINARY = /\.(png|jpe?g|gif|ico|webp|woff2?|ttf|eot|zip|gz|pdf|mp3|wav)$/i;
 
@@ -62,7 +62,7 @@ describe('leak checks', () => {
         assert.ok(example, '.env.example is missing');
         const filled = [];
         for (const [i, line] of example.lines.entries()) {
-            const m = line.match(/^\s*([A-Z0-9_]*(?:KEY|SECRET|PASSWORD|TOKEN|CLIENT_ID|SITE_ID))\s*=\s*(.*)$/);
+            const m = line.match(/^\s*([A-Z0-9_]*(?:KEY|SECRET|PASSWORD|PASSCODE|TOKEN|CLIENT_ID|SITE_ID))\s*=\s*(.*)$/);
             if (m && m[2].trim() !== '') {
                 filled.push('.env.example:' + (i + 1) + ' ' + m[1] + ' has a value');
             }
@@ -115,7 +115,8 @@ describe('leak checks', () => {
 
     it('names no cloud-internal hosts or private addresses', () => {
         // The dev-session tests use these two to show non-loopback callers are refused.
-        const EXAMPLES = new Set(['10.0.0.5', '192.168.1.20']);
+        // host.docker.internal is Docker's own name for the machine it runs on; the QStash stand-in uses it to call back.
+        const EXAMPLES = new Set(['10.0.0.5', '192.168.1.20', 'host.docker.internal']);
         const found = [];
         const pattern = /\b[a-z0-9.-]+\.(?:amazonaws\.com|internal|corp|lan)\b|\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))(?:\.\d{1,3}){2,3}\b/gi;
         for (const file of files) {
@@ -161,7 +162,9 @@ function listFiles(root) {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const full = path.join(dir, entry.name);
             if (entry.isDirectory()) {
-                if (!SKIP_DIRS.has(entry.name)) visit(full);
+                // ./secrets holds your own Compose secret files (compose.yaml) and is never committed.
+                const ownSecrets = dir === root && entry.name === 'secrets';
+                if (!SKIP_DIRS.has(entry.name) && !ownSecrets) visit(full);
                 continue;
             }
             // Local .env files hold your own credentials and are never committed.

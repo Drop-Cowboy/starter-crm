@@ -1,0 +1,556 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Starter CRM on Amazon ECS Express Mode: one container behind a managed load balancer, a DynamoDB table for events
+  and module data, an SQS queue (with a dead-letter queue) for webhooks, and optionally an ElastiCache Serverless
+  (Valkey) cache for live updates. Plain CloudFormation: no transform, no CDK, no SAM. Deploy it with
+  `npm run deploy:aws`, which fills in the network and asks for the secrets.
+
+# Everything here derives from the stack name or the stack id, so the template can be deployed any number of times
+# in one account and region. Nothing is exported and no resource has a fixed name. Every resource that takes tags
+# carries starter-crm:site-id and starter-crm:stack.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Application }
+        Parameters: [ImageUri, SiteId, AuthMode, Identity, OidcIssuer, OidcAudience, PublicUrl]
+      - Label: { default: Secrets }
+        Parameters: [DropCowboyApiKey, DropCowboyApiSecret, WebhookSecret, Passcode, SecretsMode]
+      - Label: { default: Size }
+        Parameters: [Cpu, Memory, MaxTasks]
+      - Label: { default: Webhooks and live updates }
+        Parameters: [WebhookMode, EnableRedis]
+      - Label: { default: Network }
+        Parameters: [VpcId, SubnetIds]
+      - Label: { default: Data }
+        Parameters: [RetainData]
+
+Parameters:
+  ImageUri:
+    Type: String
+    Default: ghcr.io/drop-cowboy/starter-crm:latest
+    Description: >-
+      The container image. Fargate pulls a public image with no registry setup. Point it at a private ECR mirror if
+      you keep one, and pin a version tag so a rollback is a stack update with the previous tag.
+    MinLength: 1
+  SiteId:
+    Type: String
+    AllowedPattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    ConstraintDescription: Must be a UUID. Generate one once and keep it, because a new one starts an empty inbox.
+    Description: DROPCOWBOY_SITE_ID, one stable UUID for this app.
+  AuthMode:
+    Type: String
+    Default: server
+    AllowedValues: [server, login]
+    Description: >-
+      server (your backend signs users in, the default) or login (people sign in with their Drop Cowboy account, no
+      API key needed).
+  Identity:
+    Type: String
+    Default: passcode
+    AllowedValues: [passcode, oidc]
+    Description: In server mode, how your users sign in. passcode needs the Passcode secret; oidc needs OidcIssuer and OidcAudience.
+  OidcIssuer:
+    Type: String
+    Default: ""
+    Description: DC_OIDC_ISSUER, when Identity is oidc.
+  OidcAudience:
+    Type: String
+    Default: ""
+    Description: DC_OIDC_AUDIENCE, when Identity is oidc.
+  PublicUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      DC_PUBLIC_URL, the address people use (https://...). Leave it blank on the first deploy: the AppUrl output is
+      the address, and setting it afterwards only changes what the server prints at start-up.
+  DropCowboyApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: '^[^"\\\s]*$'
+    ConstraintDescription: Must not contain quotes, backslashes or spaces.
+    Description: DROPCOWBOY_API_KEY from Developers > API keys. Required when AuthMode is server.
+  DropCowboyApiSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: '^[^"\\\s]*$'
+    ConstraintDescription: Must not contain quotes, backslashes or spaces.
+    Description: DROPCOWBOY_API_SECRET. Required when AuthMode is server.
+  WebhookSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: '^[^"\\\s]*$'
+    ConstraintDescription: Must not contain quotes, backslashes or spaces.
+    Description: >-
+      DROPCOWBOY_WEBHOOK_SECRET. It does not exist until you create the webhook in Drop Cowboy, so leave it blank on
+      the first deploy and update the stack with it afterwards. Until then webhooks are refused with 503.
+  Passcode:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: '^[^"\\\s]*$'
+    ConstraintDescription: Must not contain quotes, backslashes or spaces.
+    Description: DC_PASSCODE, 12 or more characters. Required when Identity is passcode.
+  SecretsMode:
+    Type: String
+    Default: inject
+    AllowedValues: [inject, runtime]
+    Description: >-
+      inject puts the secrets into the container's environment when a task starts (the app needs nothing but the env
+      provider). runtime has the app read them from Secrets Manager and re-read them, so a rotation needs no redeploy.
+  Cpu:
+    Type: String
+    Default: "512"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+    Description: Fargate CPU units per task.
+  Memory:
+    Type: String
+    Default: "1024"
+    Description: Memory in MiB per task. It must be a size Fargate allows for the CPU you chose.
+  MaxTasks:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 20
+    Description: >-
+      The most tasks the service scales to (it never goes below one, so the app is always awake to acknowledge
+      webhooks). Above 1, events are shared through DynamoDB, so every task sees them.
+  WebhookMode:
+    Type: String
+    Default: sqs
+    AllowedValues: [sqs, store]
+    Description: >-
+      sqs queues each webhook in SQS before it is handled, with a dead-letter queue. store keeps the queue in
+      DynamoDB and needs no extra resources.
+  EnableRedis:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      true adds an ElastiCache Serverless (Valkey) cache for live updates and rate limits shared by every task. The
+      default (false) polls DynamoDB for live updates, which needs nothing extra.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC for the service. `npm run deploy:aws` fills in your default VPC when you leave it out.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      Subnets for the load balancer and the tasks, in at least two zones. Express Mode uses one list for both, and the
+      first Express service in a VPC fixes whether that load balancer is internet-facing or internal.
+  RetainData:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      true keeps the DynamoDB table (events and CRM data) when the stack is deleted. false deletes it with the stack.
+
+Rules:
+  ServerNeedsApiCredentials:
+    RuleCondition: !Equals [!Ref AuthMode, server]
+    Assertions:
+      - Assert: !And
+          - !Not [!Equals [!Ref DropCowboyApiKey, ""]]
+          - !Not [!Equals [!Ref DropCowboyApiSecret, ""]]
+        AssertDescription: DropCowboyApiKey and DropCowboyApiSecret are required when AuthMode is server.
+  PasscodeIdentityNeedsPasscode:
+    RuleCondition: !And
+      - !Equals [!Ref AuthMode, server]
+      - !Equals [!Ref Identity, passcode]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref Passcode, ""]]
+        AssertDescription: Passcode is required when Identity is passcode.
+  OidcIdentityNeedsIssuerAndAudience:
+    RuleCondition: !And
+      - !Equals [!Ref AuthMode, server]
+      - !Equals [!Ref Identity, oidc]
+    Assertions:
+      - Assert: !And
+          - !Not [!Equals [!Ref OidcIssuer, ""]]
+          - !Not [!Equals [!Ref OidcAudience, ""]]
+        AssertDescription: OidcIssuer and OidcAudience are required when Identity is oidc.
+
+Conditions:
+  IsServer: !Equals [!Ref AuthMode, server]
+  UsesPasscode: !And
+    - !Condition IsServer
+    - !Equals [!Ref Identity, passcode]
+  UsesOidc: !And
+    - !Condition IsServer
+    - !Equals [!Ref Identity, oidc]
+  HasWebhookSecret: !Not [!Equals [!Ref WebhookSecret, ""]]
+  HasPublicUrl: !Not [!Equals [!Ref PublicUrl, ""]]
+  InjectSecrets: !Equals [!Ref SecretsMode, inject]
+  RuntimeSecrets: !Equals [!Ref SecretsMode, runtime]
+  InjectApiCredentials: !And
+    - !Condition InjectSecrets
+    - !Condition IsServer
+  InjectWebhookSecret: !And
+    - !Condition InjectSecrets
+    - !Condition HasWebhookSecret
+  InjectPasscode: !And
+    - !Condition InjectSecrets
+    - !Condition UsesPasscode
+  UsesSqs: !Equals [!Ref WebhookMode, sqs]
+  UsesRedis: !Equals [!Ref EnableRedis, "true"]
+  RetainTable: !Equals [!Ref RetainData, "true"]
+  DisposeTable: !Equals [!Ref RetainData, "false"]
+
+Resources:
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Starter CRM secrets for ${AWS::StackName}"
+      SecretString: !Sub
+        - '{"DROPCOWBOY_API_KEY":"${Key}","DROPCOWBOY_API_SECRET":"${Secret}","DROPCOWBOY_WEBHOOK_SECRET":"${Hook}","DC_PASSCODE":"${Pass}"}'
+        - Key: !Ref DropCowboyApiKey
+          Secret: !Ref DropCowboyApiSecret
+          Hook: !Ref WebhookSecret
+          Pass: !Ref Passcode
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: RetainTable
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+        - { AttributeName: gsi2pk, AttributeType: S }
+        - { AttributeName: gsi2sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: gsi2
+          KeySchema:
+            - { AttributeName: gsi2pk, KeyType: HASH }
+            - { AttributeName: gsi2sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification: { AttributeName: expires_at, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  EventsTableDisposable:
+    Type: AWS::DynamoDB::Table
+    Condition: DisposeTable
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+        - { AttributeName: gsi2pk, AttributeType: S }
+        - { AttributeName: gsi2sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: gsi2
+          KeySchema:
+            - { AttributeName: gsi2pk, KeyType: HASH }
+            - { AttributeName: gsi2sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification: { AttributeName: expires_at, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Condition: UsesSqs
+    Properties:
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  WebhookQueue:
+    Type: AWS::SQS::Queue
+    Condition: UsesSqs
+    Properties:
+      SqsManagedSseEnabled: true
+      # Longer than the slowest handler (the app allows one at most 4.5 s), so a message is not handed out twice
+      # while it is being worked. A retry sets its own, longer, delay.
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 345600
+      # The app marks an event failed after 8 attempts and deletes the message. SQS only moves a message here when
+      # the app itself keeps crashing, so the count leaves room above 8 for the retries it counts as receives.
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 12
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Starter CRM tasks of ${AWS::StackName}"
+      VpcId: !Ref VpcId
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: UsesRedis
+    Properties:
+      GroupDescription: !Sub "Starter CRM cache of ${AWS::StackName}"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 6379, ToPort: 6380, SourceSecurityGroupId: !GetAtt AppSecurityGroup.GroupId, Description: The Starter CRM tasks }
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  Cache:
+    Type: AWS::ElastiCache::ServerlessCache
+    Condition: UsesRedis
+    Properties:
+      # Unique per stack and lowercase, as a cache name must be: "crm-" and the first block of the stack's id.
+      ServerlessCacheName: !Join
+        - "-"
+        - - crm
+          - !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
+      Engine: valkey
+      Description: !Sub "Starter CRM live updates for ${AWS::StackName}"
+      SecurityGroupIds: [!GetAtt CacheSecurityGroup.GroupId]
+      SubnetIds: !Ref SubnetIds
+      DailySnapshotTime: "05:00"
+      SnapshotRetentionLimit: 7
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  InfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: !Sub "ecs.${AWS::URLSuffix}" }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" }
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices"
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: !Sub "ecs-tasks.${AWS::URLSuffix}" }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - !If
+          - InjectSecrets
+          - PolicyName: ReadAppSecret
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref AppSecret
+          - !Ref "AWS::NoValue"
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: !Sub "ecs-tasks.${AWS::URLSuffix}" }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: UseTable
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:BatchGetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:Query
+                Resource:
+                  - !If [RetainTable, !GetAtt EventsTable.Arn, !GetAtt EventsTableDisposable.Arn]
+                  - !Sub
+                    - "${TableArn}/index/*"
+                    - TableArn: !If [RetainTable, !GetAtt EventsTable.Arn, !GetAtt EventsTableDisposable.Arn]
+        - !If
+          - UsesSqs
+          - PolicyName: UseQueue
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - sqs:SendMessage
+                    - sqs:ReceiveMessage
+                    - sqs:DeleteMessage
+                    - sqs:ChangeMessageVisibility
+                    - sqs:GetQueueAttributes
+                  Resource: !GetAtt WebhookQueue.Arn
+          - !Ref "AWS::NoValue"
+        - !If
+          - RuntimeSecrets
+          - PolicyName: ReadAppSecret
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref AppSecret
+          - !Ref "AWS::NoValue"
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+  Service:
+    Type: AWS::ECS::ExpressGatewayService
+    Properties:
+      InfrastructureRoleArn: !GetAtt InfrastructureRole.Arn
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      HealthCheckPath: /healthz
+      NetworkConfiguration:
+        Subnets: !Ref SubnetIds
+        SecurityGroups: [!GetAtt AppSecurityGroup.GroupId]
+      ScalingTarget:
+        MinTaskCount: 1
+        MaxTaskCount: !Ref MaxTasks
+        AutoScalingMetric: AVERAGE_CPU
+        AutoScalingTargetValue: 60
+      PrimaryContainer:
+        Image: !Ref ImageUri
+        ContainerPort: 8080
+        AwsLogsConfiguration:
+          LogGroup: !Ref LogGroup
+          LogStreamPrefix: starter-crm
+        Environment:
+          - { Name: DC_ENV, Value: production }
+          - { Name: DC_AUTH_MODE, Value: !Ref AuthMode }
+          - { Name: DROPCOWBOY_SITE_ID, Value: !Ref SiteId }
+          - { Name: DC_TRUST_PROXY, Value: "1" }
+          - { Name: AWS_REGION, Value: !Ref "AWS::Region" }
+          - { Name: DC_STORE, Value: dynamodb }
+          - { Name: DC_DYNAMODB_TABLE, Value: !If [RetainTable, !Ref EventsTable, !Ref EventsTableDisposable] }
+          - { Name: DC_WEBHOOKS, Value: !Ref WebhookMode }
+          - !If [UsesSqs, { Name: DC_SQS_QUEUE_URL, Value: !Ref WebhookQueue }, !Ref "AWS::NoValue"]
+          - !If [UsesRedis, { Name: DC_FANOUT, Value: redis }, { Name: DC_FANOUT, Value: poll }]
+          - !If
+            - UsesRedis
+            - Name: DC_REDIS_URL
+              Value: !Sub "rediss://${Cache.Endpoint.Address}:${Cache.Endpoint.Port}"
+            - !Ref "AWS::NoValue"
+          - !If [UsesRedis, { Name: DC_REDIS_CLUSTER, Value: "on" }, !Ref "AWS::NoValue"]
+          - !If [IsServer, { Name: DC_IDENTITY, Value: !Ref Identity }, !Ref "AWS::NoValue"]
+          - !If [UsesOidc, { Name: DC_OIDC_ISSUER, Value: !Ref OidcIssuer }, !Ref "AWS::NoValue"]
+          - !If [UsesOidc, { Name: DC_OIDC_AUDIENCE, Value: !Ref OidcAudience }, !Ref "AWS::NoValue"]
+          - !If [HasPublicUrl, { Name: DC_PUBLIC_URL, Value: !Ref PublicUrl }, !Ref "AWS::NoValue"]
+          - !If
+            - RuntimeSecrets
+            - Name: DC_SECRETS
+              Value: aws-secrets-manager
+            - !Ref "AWS::NoValue"
+          - !If [RuntimeSecrets, { Name: DC_AWS_SECRET_ID, Value: !Ref AppSecret }, !Ref "AWS::NoValue"]
+        Secrets:
+          - !If
+            - InjectApiCredentials
+            - Name: DROPCOWBOY_API_KEY
+              ValueFrom: !Sub "${AppSecret}:DROPCOWBOY_API_KEY::"
+            - !Ref "AWS::NoValue"
+          - !If
+            - InjectApiCredentials
+            - Name: DROPCOWBOY_API_SECRET
+              ValueFrom: !Sub "${AppSecret}:DROPCOWBOY_API_SECRET::"
+            - !Ref "AWS::NoValue"
+          - !If
+            - InjectWebhookSecret
+            - Name: DROPCOWBOY_WEBHOOK_SECRET
+              ValueFrom: !Sub "${AppSecret}:DROPCOWBOY_WEBHOOK_SECRET::"
+            - !Ref "AWS::NoValue"
+          - !If
+            - InjectPasscode
+            - Name: DC_PASSCODE
+              ValueFrom: !Sub "${AppSecret}:DC_PASSCODE::"
+            - !Ref "AWS::NoValue"
+      Tags:
+        - { Key: "starter-crm:site-id", Value: !Ref SiteId }
+        - { Key: "starter-crm:stack", Value: !Ref "AWS::StackName" }
+
+Outputs:
+  AppUrl:
+    Description: The address of the app.
+    Value: !Sub "https://${Service.Endpoint}"
+  WebhookUrl:
+    Description: The address to give Drop Cowboy when you create the webhook.
+    Value: !Sub "https://${Service.Endpoint}/webhooks/dropcowboy"
+  TableName:
+    Description: The DynamoDB table that holds events and CRM data.
+    Value: !If [RetainTable, !Ref EventsTable, !Ref EventsTableDisposable]
+  SecretId:
+    Description: The Secrets Manager secret that holds the app's secrets. Update it, then redeploy or wait for a refresh, to rotate.
+    Value: !Ref AppSecret
+  WebhookQueueUrl:
+    Condition: UsesSqs
+    Description: The webhook queue.
+    Value: !Ref WebhookQueue
+  DeadLetterQueueUrl:
+    Condition: UsesSqs
+    Description: Messages land here only when the app keeps crashing on them. Look here first if events stop finishing.
+    Value: !Ref DeadLetterQueue

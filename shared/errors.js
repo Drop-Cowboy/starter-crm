@@ -77,6 +77,31 @@ const GUIDANCE = {
             + 'Until it does, run the starter with DC_AUTH_MODE=server and your API key in .env.',
         link: { href: SETUP, label: 'Open setup' }
     },
+    unauthenticated: {
+        title: 'Sign in to continue',
+        message: 'Your session on this server has ended or never started. Reload the page to sign in again.'
+    },
+    invalid_passcode: {
+        title: 'That passcode is not right',
+        message: 'Check DC_PASSCODE in the server\'s environment, then try again.'
+    },
+    invalid_token: {
+        title: 'Your sign-in token was rejected',
+        message: 'The server could not accept the token from your sign-in provider. It may have expired, or '
+            + 'DC_OIDC_ISSUER and DC_OIDC_AUDIENCE may not match it. Sign in again; if it keeps happening, see TROUBLESHOOTING.md.'
+    },
+    identity_unavailable: {
+        title: 'The sign-in provider could not be reached',
+        message: 'The server could not fetch its sign-in provider\'s keys. Try again in a moment.'
+    },
+    rate_limited: {
+        title: 'Too many attempts',
+        message: 'This server is limiting how fast you can do that. Wait a moment, then try again.'
+    },
+    csrf_rejected: {
+        title: 'The server refused this request\'s origin',
+        message: 'Open the app at the address set in DC_PUBLIC_URL, or add this address to DC_CORS_ORIGINS.'
+    },
     login_failed: {
         title: 'Sign-in did not finish',
         message: 'The sign-in response did not match the request this page started. Try signing in again.',
@@ -120,6 +145,23 @@ const GUIDANCE = {
         message: 'Calling and texting run on your own carrier account. Connect one (BYOC) in Drop Cowboy, then reload. '
             + 'Contacts and the pipeline work without one.',
         link: { href: SETUP + '#connect_byoc', label: 'Setup: carrier' }
+    },
+    // Sandbox mode: a team with no carrier or no funds can call and text 555
+    // test numbers (+1 555 XXX XXXX) only. See shared/sandbox.js.
+    sandbox_only: {
+        title: 'Test numbers only',
+        message: 'Until a carrier is connected and funded, this team can call and text only 555 test numbers '
+            + '(+1 555 XXX XXXX). Try a contact with a 555 number, or connect a carrier to reach real phones.',
+        link: { href: SETUP + '#connect_byoc', label: 'Setup: carrier' }
+    },
+    sandbox_concurrency: {
+        title: 'Too many test calls at once',
+        message: 'A team can have up to 5 calls to 555 test numbers at the same time. Hang up one, then try again.'
+    },
+    sandbox_caller_id: {
+        title: 'A 555 caller ID calls only 555 numbers',
+        message: 'This call was going to a real phone number with a 555 test number as the caller ID. '
+            + 'Choose one of your own phone numbers as the caller ID.'
     },
     invalid_site_id: {
         title: 'The site id is not a UUID',
@@ -293,6 +335,10 @@ export function explainError(err) {
     if (code === 'consent_required') {
         return guidance(code, known.title, consentMessage(e.reason), CONSENT_LINK, null);
     }
+    if (code === 'invalid_request') {
+        // The server names the field and what is wrong with it, which is the whole explanation.
+        return guidance(code, 'Check the details', text(e.message) || 'Something in the request is not valid.', null, null);
+    }
     if (known) {
         const message = code === 'too_many_requests' && e.retryAfter
             ? known.message + ' Retry after ' + e.retryAfter + ' seconds.'
@@ -340,4 +386,17 @@ export function consentMessage(reason) {
         return lead + ' ' + why;
     }
     return why ? lead + ' ' + why + ' ' + CONSENT_FIX : lead + ' ' + CONSENT_FIX;
+}
+
+/**
+ * Which guidance fits a signed-out page: Drop Cowboy login, or your own server's identity.
+ *
+ * @param {{ login?: { isConfigured(): boolean } | null }} crm The object startCrm() returns.
+ * @returns {'login_required' | 'login_not_configured' | 'unauthenticated'} A GUIDANCE key.
+ */
+export function signInCode(crm) {
+    if (!crm.login) {
+        return 'unauthenticated';
+    }
+    return crm.login.isConfigured() ? 'login_required' : 'login_not_configured';
 }

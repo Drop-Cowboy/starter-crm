@@ -17,11 +17,13 @@
 //
 // What counts as a hit:
 //   term            a denylist term, case-insensitive
-//   email           an address whose domain is not an allowed domain or a subdomain of one
+//   email           an address whose domain is not an allowed domain or a subdomain of one,
+//                   and is not a reserved name (.test, .example, .invalid, .localhost, example.net)
 //   phone           a NANP number in E.164 (+1NXXNXXXXXX) whose exchange is not 555,
-//                   other than the simulated +1555001xxxx and +1555002xxxx ranges
+//                   other than the 555 area code (the sandbox)
 //   aws_arn         anything starting arn:aws
-//   aws_account_id  a standalone 12-digit number outside a UUID, or a listed account id anywhere
+//   aws_account_id  a standalone 12-digit number outside a UUID other than 000000000000,
+//                   or a listed account id anywhere
 //   aws_host        an amazonaws.com or on.aws host name
 //   closed_source   a Building Blocks bundle or manifest. Building Blocks are
 //                   closed source; the Starter CRM's tests download them instead.
@@ -41,6 +43,11 @@ const SKIPPED_DIRS = new Set([
 ]);
 
 const PATTERNS_ONLY_EMAIL_DOMAINS = ['example.com', 'example.org', 'dropcowboy.com'];
+// RFC 2606 and RFC 6761 reserve these, so an address under them can never reach anyone.
+const RESERVED_EMAIL_TLDS = ['test', 'example', 'invalid', 'localhost'];
+const RESERVED_EMAIL_DOMAINS = ['example.com', 'example.org', 'example.net'];
+// The account id local AWS emulators such as ElasticMQ and LocalStack put in queue URLs.
+const PLACEHOLDER_ACCOUNT_ID = '000000000000';
 
 const MAX_SHOWN = 80;
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -92,16 +99,18 @@ function patternsOnlyDenylist() {
 
 function isAllowedEmailDomain(domain, allowed) {
     const lower = domain.toLowerCase();
-    for (const ok of allowed) {
+    if (RESERVED_EMAIL_TLDS.includes(lower.slice(lower.lastIndexOf('.') + 1))) return true;
+    for (const ok of RESERVED_EMAIL_DOMAINS.concat(allowed)) {
         if (lower === ok || lower.endsWith('.' + ok)) return true;
     }
     return false;
 }
 
-// The send API's simulated voice (+1 555 001-xxxx) and text (+1 555 002-xxxx)
-// ranges. Area code 555 is unassigned, so they reach no one.
+// Area code 555 is unassigned, so its numbers reach no one: the whole area code
+// is the sandbox, including the send API's simulated voice (+1 555 001-xxxx)
+// and text (+1 555 002-xxxx) ranges.
 function isSimulatedNumber(m) {
-    return m[1] === '555' && (m[2] === '001' || m[2] === '002');
+    return m[1] === '555';
 }
 
 function shown(text) {
@@ -144,7 +153,9 @@ function scanLine(line, denylist) {
     for (const m of matchesOf(AWS_HOST_PATTERN, line)) add('aws_host', m.index, m[0]);
 
     const masked = line.replace(UUID_PATTERN, (uuid) => ' '.repeat(uuid.length));
-    for (const m of matchesOf(ACCOUNT_PATTERN, masked)) add('aws_account_id', m.index, m[0]);
+    for (const m of matchesOf(ACCOUNT_PATTERN, masked)) {
+        if (m[0] !== PLACEHOLDER_ACCOUNT_ID) add('aws_account_id', m.index, m[0]);
+    }
     for (const id of denylist.awsAccountIds) {
         let at = line.indexOf(id);
         while (at !== -1) {

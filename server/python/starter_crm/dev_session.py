@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from flask import jsonify, request
 
@@ -23,13 +23,34 @@ LOOPBACK_IPV4 = re.compile(r"127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}")
 
 
 def session_file_path(config: Config) -> Path:
+    """Returns where ``mcp-session`` mode reads the handed-off token.
+
+    Args:
+        config: The loaded server config.
+
+    Returns:
+        ``<root>/.dropcowboy/session.json``.
+    """
     return config.root / ".dropcowboy" / "session.json"
 
 
 def dev_session_view(config: Config) -> Callable:
+    """Builds the GET /__dev/session view (``mcp-session`` mode only).
+
+    Args:
+        config: The loaded server config.
+
+    Returns:
+        A Flask view that serves the session file to loopback callers only.
+
+    Raises:
+        HttpError: From the view: 403 ``loopback_only``, 404 ``no_session``,
+            410 ``session_expired``.
+    """
+
     def get_dev_session():
         # The TCP peer, never X-Forwarded-For: any client can send that header.
-        # Flask's remote_addr is the socket address unless you add ProxyFix.
+        # The socket address, never X-Forwarded-For: a proxy in front would otherwise make every caller look local.
         if not is_loopback_address(request.remote_addr):
             raise HttpError(403, "loopback_only", "The dev session is only served to this machine.")
         # A hostile page can point its own hostname at 127.0.0.1 (DNS

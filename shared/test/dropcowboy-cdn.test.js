@@ -141,7 +141,7 @@ describe('CDN loader', () => {
 describe('cdnVersionFor', () => {
     it('uses the pinned default, strips a leading v, and refuses "latest"', () => {
         assert.equal(cdnVersionFor({ cdn_version: null }), DEFAULT_CDN_VERSION);
-        assert.equal(DEFAULT_CDN_VERSION, '3.33.6');
+        assert.equal(DEFAULT_CDN_VERSION, '3.33.16');
         assert.equal(cdnVersionFor({ cdn_version: 'v3.34.1' }), '3.34.1');
         assert.throws(() => cdnVersionFor({ cdn_version: 'latest' }), { code: 'invalid_cdn_version' });
     });

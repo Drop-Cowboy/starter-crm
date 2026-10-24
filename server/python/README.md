@@ -12,13 +12,14 @@ It implements [`../CONTRACT.md`](../CONTRACT.md) and passes the suite in
 [`../conformance/`](../conformance/). The front-ends only use the routes in that
 contract, so they work the same on this server or the Node one.
 
-Dependencies are `Flask` and `python-dotenv`. Calls to Drop Cowboy use the
+Dependencies are `Flask`, `python-dotenv`, `gunicorn` and `PyJWT` (loaded only
+when you choose `DC_IDENTITY=oidc`). Calls to Drop Cowboy use the
 standard library's `urllib`, and signatures use `hmac`, so you can see every
 HTTP request the starter makes.
 
 ## Run it
 
-Needs Python 3.9 or later.
+Needs Python 3.11 or later.
 
 ```bash
 cp ../../.env.example ../../.env   # then fill it in
@@ -48,7 +49,12 @@ already in your environment win.
 | `DC_AUTH_MODE` | | `server` (default), `mcp-session` or `login` |
 | `DROPCOWBOY_API_KEY`, `DROPCOWBOY_API_SECRET` | `server` | Needs the `numbers:write` scope to mint, and `balance:read` for the setup check |
 | `DROPCOWBOY_SITE_ID` | `login`, `server` | One UUID per deployed app; keep it stable. It partitions the embed inbox. Checked in every mode when set. |
-| `STARTER_CRM_USER_ID` | `server` | A UUID standing in for your signed-in user until you replace `require_user()` |
+| `DC_IDENTITY` | `server` | `dev` (default, local only), `passcode`, `oidc` or a path to your own provider |
+| `DC_PASSCODE` | `passcode` | 12 or more characters; a secret |
+| `DC_OIDC_ISSUER`, `DC_OIDC_AUDIENCE`, `DC_OIDC_JWKS_URL` | `oidc` | The issuer must equal the token's `iss`; the key set URL is optional |
+| `STARTER_CRM_USER_ID` | `dev` | A UUID for the dev user; optional with `passcode` |
+| `DC_SECRETS`, `DC_RATE_LIMIT`, `DC_LOG`, `DC_OBSERVER` | | Provider choices; see [`docs/providers/`](../../docs/providers/identity.md). A custom provider is a `.py` file. |
+| `DC_CSP`, `DC_CORS_ORIGINS`, `DC_TOKEN_CACHE`, `DC_LOG_FORMAT`, `DC_LOG_REQUESTS`, `DC_SECRETS_DIR`, `DC_SECRETS_REFRESH_SECONDS` | | Security headers, CORS, token reuse, logging and secret files; see `.env.example` |
 | `DROPCOWBOY_WEBHOOK_SECRET` | webhooks | The webhook's signing secret. Comma-separate several: each webhook has its own. |
 | `DROPCOWBOY_API_BASE` | | Default `https://api-v2.dropcowboy.com` |
 | `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE` | `login` | Public values, safe in the browser |
@@ -158,7 +164,10 @@ is why `starter_crm/webhooks.py` reads `request.get_data()` and never
 | `starter_crm/__main__.py` | `python -m starter_crm`: loads `.env`, checks config, starts listening |
 | `starter_crm/app.py` | `create_app(config)`: wires the routes. Tests use it without listening. |
 | `starter_crm/config.py` | Reads and validates the environment |
-| `starter_crm/auth.py` | `require_user()`, the placeholder for **your** login, and the login-mode bearer check |
+| `starter_crm/auth.py` | `require_user()`, which asks the chosen identity who is calling, and the login-mode bearer check |
+| `starter_crm/providers/` | The built-in identity (`dev`, `passcode`, `oidc`), secrets (`env`, `file`), rate-limit (`memory`, `off`) and log (`console`) providers |
+| `starter_crm/provider_check.py` | `python -m starter_crm.provider_check <kind> <path>`, which checks a provider you wrote |
+| `starter_crm/security.py`, `hooks.py`, `token_cache.py` | Response headers, CORS and CSRF; observer hooks; the site token cache |
 | `starter_crm/token.py` | The purpose-to-scope allowlist and the mint call |
 | `starter_crm/readiness.py` | The setup check, trimmed to what the page shows |
 | `starter_crm/dev_session.py` | The loopback-only MCP session hand-off |
@@ -215,8 +224,8 @@ No test talks to the real Drop Cowboy API or needs credentials.
 
 ## Going to production
 
-- **Replace `require_user()`** in `starter_crm/auth.py` with your real session
-  check. Until you do, anyone who can reach the server gets tokens.
+- **Choose a real identity.** `DC_ENV=production` refuses `DC_IDENTITY=dev`.
+  Use `passcode`, `oidc` or your own provider (`../../CUSTOMIZE.md`).
 - **Use a production WSGI server.** `python -m starter_crm` runs Flask's
   development server. Serve `create_app(config)` with a threaded WSGI server
   instead; each open `/api/events` stream holds one thread.
@@ -224,7 +233,9 @@ No test talks to the real Drop Cowboy API or needs credentials.
 - **Run behind HTTPS.** Browsers only allow the microphone on HTTPS pages (and
   `localhost`).
 - **Keep secrets in a secret manager**, not a `.env` file on the server.
-- **Rate-limit the token route** per user.
+- **Check the rate limit fits.** The token route and sign-in are limited per
+  process (per Gunicorn worker); use a shared limiter on several instances
+  (`docs/providers/ratelimit.md`).
 - **Store webhook events durably** (your database or a queue) before you answer,
   and de-duplicate on `event_id` there. The in-memory store here forgets
   everything on restart and is per process.

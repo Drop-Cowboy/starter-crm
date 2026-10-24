@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import { ctx } from '../lib/context.js';
+import { bootServer, serverEnv } from '../lib/oneoff.js';
 import { baseEnv, freePort, spawnServer, stopServer } from '../lib/process.js';
 
 const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'starter-crm-boot-'));
@@ -64,6 +65,44 @@ describe('boot', () => {
     it('an unknown DC_AUTH_MODE exits', async () => {
         const output = await bootExpectingFailure({ DC_AUTH_MODE: 'open-to-everyone' });
         assert.match(output, /DC_AUTH_MODE/);
+        assert.match(output, /invalid_auth_mode/);
+    });
+
+    it('SAMPLE_USER_ID exits with renamed_env naming STARTER_CRM_USER_ID', async () => {
+        const output = await bootExpectingFailure({
+            DC_AUTH_MODE: 'server',
+            DROPCOWBOY_API_KEY: ctx.secrets.apiKey,
+            DROPCOWBOY_API_SECRET: ctx.secrets.apiSecret,
+            DROPCOWBOY_SITE_ID: crypto.randomUUID(),
+            STARTER_CRM_USER_ID: ctx.userId,
+            SAMPLE_USER_ID: ctx.userId
+        });
+        assert.match(output, /renamed_env/);
+        assert.match(output, /STARTER_CRM_USER_ID/);
+        assert.match(output, /SAMPLE_USER_ID/);
+    });
+
+    it('production plus DC_IDENTITY=dev exits with a fix hint', async () => {
+        const output = await bootExpectingFailure({
+            DC_ENV: 'production',
+            DC_IDENTITY: 'dev',
+            DC_AUTH_MODE: 'server',
+            DROPCOWBOY_API_KEY: ctx.secrets.apiKey,
+            DROPCOWBOY_API_SECRET: ctx.secrets.apiSecret,
+            DROPCOWBOY_SITE_ID: crypto.randomUUID(),
+            STARTER_CRM_USER_ID: ctx.userId
+        });
+        assert.match(output, /production_dev_identity/);
+        assert.match(output, /fix:/);
+    });
+
+    it('production plus mcp-session exits', async () => {
+        const output = await bootExpectingFailure({
+            DC_ENV: 'production',
+            DC_AUTH_MODE: 'mcp-session',
+            DROPCOWBOY_SITE_ID: crypto.randomUUID()
+        });
+        assert.match(output, /production_mcp_session/);
     });
 
     it('a port already in use exits with a plain message, not a stack trace', async () => {
@@ -84,6 +123,20 @@ describe('boot', () => {
             assert.doesNotMatch(output, /Traceback|TypeError|^\s+at /m);
         } finally {
             await new Promise((resolve) => blocker.close(resolve));
+        }
+    });
+
+    // Every entry point (dev server, Node, Gunicorn in the container) tells the
+    // operator where to register the webhook, with the trailing slash stripped.
+    it('logs the webhook URL from DC_PUBLIC_URL', async () => {
+        const server = await bootServer('public-url', { ...serverEnv(), DC_PUBLIC_URL: 'https://crm.example.com/' });
+        try {
+            assert.ok(
+                server.output().includes('Point Drop Cowboy webhooks at https://crm.example.com/webhooks/dropcowboy'),
+                server.output()
+            );
+        } finally {
+            await server.stop();
         }
     });
 });

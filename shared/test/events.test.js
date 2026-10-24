@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { createActivityLog, fromDock, fromWebhook, webhookFamily } from '../activity.js';
 import { connectEvents } from '../events.js';
+import { setAuthHeaderProvider } from '../server-api.js';
 
 class FakeEventSource {
     static CLOSED = 2;
@@ -183,5 +184,30 @@ describe('activity', () => {
         assert.equal(log.items()[0].title, 'webhook');
         assert.equal(log.items()[1].title, 'contact.tag.added');
         assert.deepEqual(seen, [1, 2]);
+    });
+});
+
+describe('connectEvents with an identity header', () => {
+    it('reads the stream with fetch, carrying the header, because EventSource cannot send one', async () => {
+        const calls = [];
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url, init) => {
+            calls.push({ url, init });
+            return new Response(null, { status: 401 });
+        };
+        setAuthHeaderProvider(() => ({ Authorization: 'Bearer from-the-page' }));
+        const timers = fakeTimers();
+        try {
+            const events = connectEvents({ onEvent() {}, setTimeoutImpl: timers.setTimeoutImpl, clearTimeoutImpl: timers.clearTimeoutImpl });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            events.close();
+            assert.equal(calls.length, 1);
+            assert.equal(calls[0].url, '/api/events');
+            assert.equal(calls[0].init.headers.Authorization, 'Bearer from-the-page');
+            assert.equal(timers.timers.length, 1, 'a refused stream is retried later, with a fresh header');
+        } finally {
+            setAuthHeaderProvider(null);
+            globalThis.fetch = realFetch;
+        }
     });
 });

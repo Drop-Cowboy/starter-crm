@@ -1,6 +1,16 @@
 import { startCrm } from '/shared/crm.js';
 import { explainError } from '/shared/errors.js';
-import { isPaletteShortcut, readLayout, showsContactList, syncWidgetTheme } from '/shared/ui.js';
+import { getThemeChoice, setThemeChoice } from '/shared/settings.js';
+import {
+    applyThemeChoice,
+    isPaletteShortcut,
+    nextThemeChoice,
+    readLayout,
+    showsContactList,
+    syncWidgetTheme,
+    THEME_DISPLAY,
+    themeButtonLabel
+} from '/shared/ui.js';
 import { startActivityFeed, toast } from './activity.js';
 import { createContactList } from './contact-list.js';
 import { h, icon, show } from './dom.js';
@@ -8,6 +18,7 @@ import { bannerNotice, errorNotice } from './notice.js';
 import { createPalette } from './palette.js';
 import { createRouter } from './router.js';
 import { createShell } from './shell.js';
+import { showSignIn } from './sign-in.js';
 import { renderCampaigns } from './pages/campaigns.js';
 import { renderContact } from './pages/contact.js';
 import { renderContacts } from './pages/contacts.js';
@@ -47,6 +58,16 @@ function renderAccount(crm) {
             status = h('button', { type: 'button', class: 'btn primary sm', onclick: () => crm.login.signIn(location.pathname) }, 'Sign in with Drop Cowboy');
         }
     }
+    if (crm.config.auth_mode === 'server' && crm.identity.current().identity === 'passcode') {
+        status = h('button', {
+            type: 'button',
+            class: 'btn sm',
+            onclick: () => crm.identity.signOut().then(
+                () => location.reload(),
+                (err) => toast('Could not sign out: ' + err.message)
+            )
+        }, 'Sign out');
+    }
     show(document.getElementById('account'), mode, status);
     document.getElementById('activity-mode').textContent = 'Mode: ' + crm.config.auth_mode;
 }
@@ -78,8 +99,26 @@ function contactIdOf(path) {
     return match && match[1] !== 'new' ? decodeURIComponent(match[1]) : null;
 }
 
-async function boot() {
+/** Applies the saved theme, and lets the top bar's button move through system, light and dark. */
+function startTheme() {
+    const button = document.getElementById('theme-button');
+    let choice = getThemeChoice();
+    function draw() {
+        applyThemeChoice(document.documentElement, choice);
+        button.setAttribute('aria-label', themeButtonLabel(choice));
+        button.setAttribute('title', themeButtonLabel(choice));
+        show(button, icon(THEME_DISPLAY[choice].icon), h('span', { class: 'tlb' }, THEME_DISPLAY[choice].label));
+    }
+    draw();
     syncWidgetTheme(document.documentElement);
+    button.addEventListener('click', () => {
+        choice = setThemeChoice(nextThemeChoice(choice));
+        draw();
+    });
+}
+
+async function boot() {
+    startTheme();
     const shell = createShell();
     if (!/Mac|iPhone|iPad/.test(navigator.platform)) {
         document.querySelector('.cmdk kbd').textContent = 'Ctrl K';
@@ -103,6 +142,13 @@ async function boot() {
     window.addEventListener('dc-session-expired', () => {
         showBanner({ code: crm.login ? 'login_expired' : 'unauthorized' }, crm);
     });
+
+    // Your own server's identity says nobody is signed in: show the sign-in
+    // screen and stop, so no page asks for data it would only be refused.
+    if (crm.config.auth_mode === 'server' && crm.needsSignIn()) {
+        showSignIn(crm);
+        return;
+    }
 
     renderAccount(crm);
     startActivityFeed(crm, { onItem: () => shell.noteActivity() });

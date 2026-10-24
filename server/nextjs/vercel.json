@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "npm ci --no-audit --no-fund && npm ci --omit=dev --no-audit --no-fund --prefix ../node && npm ci --no-audit --no-fund --prefix ../../react",
+  "buildCommand": "npm run build",
+  "functions": {
+    "app/internal/queue/webhook-jobs/route.js": {
+      "maxDuration": 300,
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "starter-crm-webhook-jobs" }]
+    }
+  },
+  "crons": [{ "path": "/internal/maintenance", "schedule": "17 4 * * *" }]
+}

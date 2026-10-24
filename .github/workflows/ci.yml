@@ -23,8 +23,7 @@ concurrency:
 jobs:
   # Unit tests for shared code, both servers and the React app; the server
   # contract suite against both servers; and the static leak checks. Runs on
-  # the oldest and newest Python the starter supports. setup-python publishes
-  # 3.9 for Ubuntu 24.04 but not later, hence the pinned runner image.
+  # the oldest and newest Python the starter supports.
   checks:
     name: Unit and contract tests (Python ${{ matrix.python }})
     runs-on: ubuntu-24.04
@@ -32,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.9', '3.13']
+        python: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,6 +43,8 @@ jobs:
           cache: npm
           cache-dependency-path: |
             server/node/package-lock.json
+            server/nextjs/package-lock.json
+            server/netlify/package-lock.json
             react/package-lock.json
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -52,13 +53,21 @@ jobs:
           cache: pip
           cache-dependency-path: server/python/requirements-dev.txt
 
+      - name: Install cfn-lint for the AWS template tests
+        run: pip install cfn-lint==1.57.2
+
+      # Postgres and Valkey for the durable event store, fan-out and queue suites. Without them
+      # those suites skip, so a green run would say nothing about them.
+      - name: Start Postgres, Valkey and OpenBao
+        run: docker compose -f tests/services.compose.yml up -d --wait
+
       - name: Run the tests
         run: npm run test:fast
         env:
           PYTHON: python
 
-  # The app in Chromium: each server with each front-end, plus the Python
-  # server on 3.9 with the plain front-end.
+  # The app in Chromium: each server (Node, Python, and the Next.js and Netlify variants) with each front-end, plus the
+  # Python server on 3.11 with the plain front-end.
   e2e:
     name: Browser (${{ matrix.server }} server, ${{ matrix.ui }}${{ matrix.server == 'python' && format(', Python {0}', matrix.python) || '' }})
     runs-on: ubuntu-24.04
@@ -66,13 +75,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        server: [node, python]
+        server: [node, python, nextjs, netlify]
         ui: [vanilla, react]
         python: ['3.13']
         include:
           - server: python
             ui: vanilla
-            python: '3.9'
+            python: '3.11'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,6 +93,8 @@ jobs:
           cache: npm
           cache-dependency-path: |
             server/node/package-lock.json
+            server/nextjs/package-lock.json
+            server/netlify/package-lock.json
             react/package-lock.json
             tests/e2e/package-lock.json
 
@@ -109,6 +120,7 @@ jobs:
       - name: Run the browser tests
         run: |
           stages="e2e:${{ matrix.server }}:${{ matrix.ui }}"
+          if [ "${{ matrix.server }}" = "nextjs" ]; then stages="nextjs:build,$stages"; fi
           if [ "${{ matrix.ui }}" = "react" ]; then stages="react:build,$stages"; fi
           node tests/run-all.mjs --only "$stages"
         env:

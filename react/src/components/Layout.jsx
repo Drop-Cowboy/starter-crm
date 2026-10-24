@@ -4,7 +4,20 @@ import { fromWebhook } from '@shared/activity.js';
 import { explainError } from '@shared/errors.js';
 import { connectEvents } from '@shared/events.js';
 import { formatDate } from '@shared/format.js';
-import { isCurrentPath, isPaletteShortcut, MODULES, NAV_PAGES, readLayout, SETUP_PAGE, showsContactList } from '@shared/ui.js';
+import { getThemeChoice, setThemeChoice } from '@shared/settings.js';
+import {
+    applyThemeChoice,
+    isCurrentPath,
+    isPaletteShortcut,
+    MODULES,
+    NAV_PAGES,
+    nextThemeChoice,
+    readLayout,
+    SETUP_PAGE,
+    showsContactList,
+    THEME_DISPLAY,
+    themeButtonLabel
+} from '@shared/ui.js';
 import { useCrm } from '../crm-context.js';
 import { useActivityItems, useMediaQuery } from '../hooks.js';
 import { LayoutContext, useAppPath, withLayout } from '../layout-context.js';
@@ -49,7 +62,20 @@ function selectionOf(pathname) {
 function Account() {
     const crm = useCrm();
     const mode = <span className="modepill"><Icon name="key" />Mode: {crm.config.auth_mode}</span>;
+    const toast = useToast();
     if (!crm.login) {
+        if (crm.config.auth_mode === 'server' && crm.identity.current().identity === 'passcode') {
+            const signOut = () => crm.identity.signOut().then(
+                () => window.location.reload(),
+                (err) => toast('Could not sign out: ' + err.message)
+            );
+            return (
+                <div className="account" id="account">
+                    {mode}
+                    <button type="button" className="btn sm" onClick={signOut}>Sign out</button>
+                </div>
+            );
+        }
         return <div className="account" id="account">{mode}</div>;
     }
     let status = <span>Sign-in not set up</span>;
@@ -63,6 +89,28 @@ function Account() {
         );
     }
     return <div className="account" id="account">{mode}{status}</div>;
+}
+
+/** Moves through system, light and dark, and remembers the choice in this browser. */
+function ThemeButton() {
+    const [choice, setChoice] = useState(getThemeChoice);
+    const label = themeButtonLabel(choice);
+    useEffect(() => {
+        applyThemeChoice(document.documentElement, choice);
+    }, [choice]);
+    return (
+        <button
+            className="topbtn"
+            id="theme-button"
+            type="button"
+            aria-label={label}
+            title={label}
+            onClick={() => setChoice(setThemeChoice(nextThemeChoice(choice)))}
+        >
+            <Icon name={THEME_DISPLAY[choice].icon} />
+            <span className="tlb">{THEME_DISPLAY[choice].label}</span>
+        </button>
+    );
 }
 
 function TopBar({ activityRef, activityOpen, unseen, onActivity, onPalette }) {
@@ -79,6 +127,7 @@ function TopBar({ activityRef, activityOpen, unseen, onActivity, onPalette }) {
                 <kbd aria-hidden="true">{SHORTCUT_LABEL}</kbd>
             </button>
             <span className="sp" />
+            <ThemeButton />
             <button
                 className="topbtn"
                 id="activity-button"

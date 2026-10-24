@@ -1,5 +1,6 @@
 import { changedFields } from '/shared/contacts-api.js';
 import { contactInitials, contactName, formatDate, formatPhone } from '/shared/format.js';
+import { contactSandboxHint } from '/shared/sandbox.js';
 import { callContact, connectContactWidget, contactWidgets, focusContact, textContact } from '/shared/widgets.js';
 import { activityItem, toast } from '../activity.js';
 import { consentSheet } from '../consent-sheet.js';
@@ -117,6 +118,7 @@ export async function renderContact(main, { crm, params, navigate, isCurrent, sh
             info = next;
             avatar.textContent = contactInitials(contact);
             document.title = contactName(contact) + ' · Starter CRM';
+            drawSandboxHint();
             shell.setContact(contact);
             reloadCard();
             contactList.refresh();
@@ -179,14 +181,34 @@ export async function renderContact(main, { crm, params, navigate, isCurrent, sh
 
     const reachable = Boolean(contact.main_phone);
     const existed = new URLSearchParams(location.search).get('existing') === '1';
+    // In sandbox mode (readiness says sandbox_only) a sentence under the
+    // buttons says what Call and Text will really do: a 555 test number is
+    // answered by Drop Cowboy's test line, anything else is refused. Outside
+    // sandbox mode it stays hidden and empty.
+    const sandboxHint = h('p', { class: 'hint', id: 'sandbox-hint', hidden: true });
+    const callButton = h('button', { type: 'button', class: 'btn primary', disabled: !reachable, onclick: () => run(() => callContact(crm, contact)) }, icon('phone'), 'Call');
+    const textButton = h('button', { type: 'button', class: 'btn', disabled: !reachable, onclick: () => run(() => textContact(crm, contact)) }, icon('message'), 'Text');
+    let sandboxOnly = false;
+    function drawSandboxHint() {
+        const text = contactSandboxHint(sandboxOnly, contact.main_phone);
+        sandboxHint.textContent = text || '';
+        sandboxHint.hidden = !text;
+        for (const button of [callButton, textButton]) {
+            if (text) {
+                button.setAttribute('aria-describedby', 'sandbox-hint');
+            } else {
+                button.removeAttribute('aria-describedby');
+            }
+        }
+    }
     show(main, h('div', { class: 'contact-view' },
         h('a', { class: 'back', href: '/contacts' }, icon('chevron-left'), 'Contacts'),
         h('header', { class: 'profile' },
             avatar,
             info,
             h('div', { class: 'acts' },
-                h('button', { type: 'button', class: 'btn primary', disabled: !reachable, onclick: () => run(() => callContact(crm, contact)) }, icon('phone'), 'Call'),
-                h('button', { type: 'button', class: 'btn', disabled: !reachable, onclick: () => run(() => textContact(crm, contact)) }, icon('message'), 'Text'),
+                callButton,
+                textButton,
                 h('button', { type: 'button', class: 'btn', 'data-consent': true, 'aria-label': 'Record consent', onclick: openSheet },
                     icon('shield'),
                     h('span', { class: 'l-full' }, 'Record consent'),
@@ -198,12 +220,20 @@ export async function renderContact(main, { crm, params, navigate, isCurrent, sh
         existed ? infoNotice('Already in your contacts', 'A contact with that phone or email already existed, so it was opened instead. Its empty fields were filled in.') : null,
         problems,
         reachable ? null : h('p', { class: 'hint' }, 'Add a phone number to call or text.'),
+        sandboxHint,
         tabs.list,
         tabs.panels,
         sheet.element
     ));
     shell.sync();
     shell.setContact(contact);
+    // Never rejects; the page is complete without it.
+    crm.sandboxOnly().then((on) => {
+        if (isCurrent()) {
+            sandboxOnly = on;
+            drawSandboxHint();
+        }
+    });
 
     // The card loads the contact and its timeline itself, with the contacts
     // token manager. Its own Call and Text buttons fire events; they do the

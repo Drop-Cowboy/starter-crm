@@ -5,12 +5,38 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs",
+    "dev": "node scripts/dev.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "webhook:test": "node scripts/webhook-test.mjs",
+    "worker": "node server/node/src/worker.js",
+    "webhooks:failed": "node server/node/src/cli.js failed",
+    "webhooks:replay": "node server/node/src/cli.js replay",
+    "new:module": "node scripts/new-module.mjs",
+    "migrate:status": "node server/node/src/cli.js migrate:status",
     "test": "node tests/run-all.mjs",
     "test:fast": "node tests/run-all.mjs --fast",
     "test:e2e": "node tests/run-all.mjs --only react:build,e2e:node:vanilla,e2e:node:react,e2e:python:vanilla,e2e:python:react",
-    "test:leaks": "node --test --test-reporter=spec tests/leak-check.test.js"
+    "test:container": "node tests/run-all.mjs --only container:node,container:python,container:compose",
+    "test:leaks": "node --test --test-reporter=spec tests/leak-check.test.js",
+    "test:live": "node scripts/test-live.mjs",
+    "test:deployed": "node scripts/test-deployed.mjs",
+    "deploy:aws": "node scripts/deploy-aws.mjs",
+    "destroy:aws": "node scripts/destroy-aws.mjs",
+    "test:live:sweep": "node scripts/test-live-sweep.mjs",
+    "soak": "node scripts/soak.mjs",
+    "conformance:provider": "node server/conformance/provider/cli.js"
+  },
+  "dependencies": {
+    "@netlify/async-workloads": "0.0.106",
+    "@netlify/sdk": "file:server/netlify/unused-netlify-sdk"
+  },
+  "overrides": {
+    "@netlify/async-workloads": "$@netlify/async-workloads",
+    "@netlify/sdk": "$@netlify/sdk"
   }
 }

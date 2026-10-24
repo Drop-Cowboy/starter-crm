@@ -121,7 +121,8 @@ def test_mints_the_contacts_purpose_with_only_the_contacts_scope(upstream):
 def test_answers_400_invalid_json_for_a_malformed_body(upstream, body):
     response = post(upstream, body)
     assert response.status_code == 400
-    assert response.get_json() == {"error": {"code": "invalid_json", "message": "Request body is not valid JSON."}}
+    body = response.get_json()["error"]
+    assert (body["code"], body["message"]) == ("invalid_json", "Request body is not valid JSON.")
     assert upstream.calls == []
 
 

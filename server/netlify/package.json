@@ -1,0 +1,30 @@
+{
+  "name": "starter-crm-server-netlify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Starter CRM on Netlify: Netlify Functions over the web-standard core in ../node, with the front-end on Netlify's CDN. See ../CONTRACT.md.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/serve.mjs",
+    "test": "node --test --test-reporter=spec test/*.test.mjs",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@netlify/async-workloads": "0.0.106",
+    "@netlify/sdk": "file:unused-netlify-sdk"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
+    "globals": "17.13.0"
+  },
+  "overrides": {
+    "@netlify/async-workloads": "$@netlify/async-workloads",
+    "@netlify/sdk": "$@netlify/sdk"
+  }
+}

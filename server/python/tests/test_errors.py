@@ -74,7 +74,9 @@ def test_passes_402_payment_required_through(upstream):
     )
     response = mint(make_config(DROPCOWBOY_API_BASE=upstream.url))
     assert response.status_code == 402
-    assert response.get_json() == {"error": {"code": "payment-required", "message": "Add funds to continue."}}
+    body = response.get_json()["error"]
+    assert (body["code"], body["message"]) == ("payment-required", "Add funds to continue.")
+    assert body["request_id"] == response.headers["X-Request-Id"]
 
 
 def test_maps_a_timeout_to_504_upstream_timeout(upstream):
@@ -116,7 +118,9 @@ def test_never_follows_a_redirect_so_the_api_key_stays_put(upstream):
 def test_wraps_unknown_routes_in_the_envelope():
     response = make_client(make_config()).get("/api/nothing-here?x=1")
     assert response.status_code == 404
-    assert response.get_json() == {"error": {"code": "not_found", "message": "No route matches GET /api/nothing-here."}}
+    body = response.get_json()["error"]
+    assert (body["code"], body["message"]) == ("not_found", "No route matches GET /api/nothing-here.")
+    assert body["request_id"] == response.headers["X-Request-Id"]
 
 
 def test_a_known_path_with_the_wrong_method_is_404_not_found():

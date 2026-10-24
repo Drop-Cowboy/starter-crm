@@ -99,7 +99,7 @@ describe('POST /api/dropcowboy/token', () => {
     it('answers 400 invalid_json for a malformed body', async () => {
         const res = await post('{"purpose":', fakeFetch(success));
         expect(res.status).toBe(400);
-        expect(await res.json()).toEqual({ error: { code: 'invalid_json', message: 'Request body is not valid JSON.' } });
+        expect(await res.json()).toEqual({ error: { code: 'invalid_json', message: 'Request body is not valid JSON.', request_id: expect.any(String) } });
     });
 
     it('answers 502 when upstream success lacks a token', async () => {

@@ -2,13 +2,16 @@
 // Runs every test in the starter, in order, and prints a count per stage.
 //
 //   npm test                 everything
-//   npm run test:fast        no browser: unit tests, conformance, leak checks
+//   npm run test:fast        no browser and no Docker: unit tests, conformance, leak checks
+//   npm run test:container   build both images and test the containers
 //   node tests/run-all.mjs --only e2e:node:vanilla,leaks
 //   node tests/run-all.mjs --list
+//   node tests/run-all.mjs --install-only  install what the stages need, run nothing
 //
 // Missing npm dependencies are installed (npm ci) and a Python virtualenv is
 // created in server/python/.venv the first time. Stages that need Python are
-// skipped, with a notice, when no Python 3.9+ is found. Set PYTHON to choose
+// skipped, with a notice, when no Python 3.11+ is found, and the container
+// stages when Docker is not running. Set PYTHON to choose
 // the interpreter.
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -24,17 +27,36 @@ const only = valueOf('--only');
 
 const python = findPython();
 const pythonServer = python && { SERVER_CMD: quote(python) + ' -m starter_crm', SERVER_CWD: at('server', 'python') };
-const noPython = python ? null : 'no Python 3.9+ found (set PYTHON to choose one)';
+// The Next.js variant (server/nextjs) runs the Node core behind Next route handlers; `npm start` there is its launcher.
+const nextjsServer = { SERVER_CMD: 'exec node scripts/serve.mjs', SERVER_CWD: at('server', 'nextjs'), SERVER_LANG: 'node', NEXT_TELEMETRY_DISABLED: '1' };
+// The Netlify variant (server/netlify) runs the same core in a Netlify function; its launcher runs that function locally.
+const netlifyServer = { SERVER_CMD: 'exec node scripts/serve.mjs', SERVER_CWD: at('server', 'netlify'), SERVER_LANG: 'node' };
+const noPython = python ? null : 'no Python 3.11+ found (set PYTHON to choose one)';
+const noDocker = spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0 ? null : 'Docker is not running (the container stages need it)';
+const prepared = new Set();
 
-/** @type {{ name: string, cwd: string, run: string[], env?: object, needs?: string[], skip?: string | null, browser?: boolean, build?: boolean }[]} */
+/** @type {{ name: string, cwd: string, run: string[], env?: object, needs?: string[], skip?: string | null, browser?: boolean, build?: boolean, check?: boolean, container?: boolean }[]} */
 const STAGES = [
+    { name: 'scripts', cwd: ROOT, run: ['node', '--test', '--test-reporter=spec', 'scripts/new-module.test.mjs', 'scripts/deploy-aws.test.mjs', 'scripts/aws-template.test.mjs', 'scripts/env-file.test.mjs', 'scripts/webhook-check.test.mjs'] },
     { name: 'shared', cwd: at('shared'), run: ['npm', 'test'] },
     { name: 'server:node', cwd: at('server', 'node'), run: ['npm', 'test'], needs: ['server/node'] },
     { name: 'server:python', cwd: at('server', 'python'), run: [python, '-m', 'pytest', '-q'], skip: noPython, needs: ['python'] },
+    { name: 'lint:node', cwd: at('server', 'node'), run: ['npm', 'run', 'lint'], needs: ['server/node'], check: true },
+    { name: 'lint:python', cwd: at('server', 'python'), run: [python, '-m', 'ruff', 'check', '.'], skip: noPython, needs: ['python'], check: true },
+    { name: 'format:python', cwd: at('server', 'python'), run: [python, '-m', 'ruff', 'format', '--check', '.'], skip: noPython, needs: ['python'], check: true },
     { name: 'conformance:node', cwd: at('server', 'conformance'), run: ['node', 'run.js'], needs: ['server/node'] },
     { name: 'conformance:python', cwd: at('server', 'conformance'), run: ['node', 'run.js'], env: pythonServer, skip: noPython, needs: ['python'] },
+    { name: 'lint:nextjs', cwd: at('server', 'nextjs'), run: ['npm', 'run', 'lint'], needs: ['server/nextjs'], check: true },
     { name: 'react', cwd: at('react'), run: ['npm', 'test'], needs: ['react'] },
     { name: 'react:build', cwd: at('react'), run: ['npm', 'run', 'build'], needs: ['react'], browser: true, build: true },
+    // `next build` of the variant (it builds the React app first), then the conformance suite against its launcher.
+    { name: 'nextjs:build', cwd: at('server', 'nextjs'), run: ['npm', 'run', 'build'], env: { NEXT_TELEMETRY_DISABLED: '1' }, needs: ['server/nextjs', 'server/node', 'react'], build: true },
+    { name: 'conformance:nextjs', cwd: at('server', 'conformance'), run: ['node', 'run.js'], env: nextjsServer, needs: ['server/node', 'server/nextjs'] },
+    // The Netlify variant: its own tests, the CDN folder it builds, then the conformance suite against its function.
+    { name: 'netlify', cwd: at('server', 'netlify'), run: ['npm', 'test'], needs: ['server/netlify', 'server/node'] },
+    { name: 'lint:netlify', cwd: at('server', 'netlify'), run: ['npm', 'run', 'lint'], needs: ['server/netlify'], check: true },
+    { name: 'netlify:build', cwd: at('server', 'netlify'), run: ['npm', 'run', 'build'], needs: ['server/netlify', 'server/node', 'react'], build: true },
+    { name: 'conformance:netlify', cwd: at('server', 'conformance'), run: ['node', 'run.js'], env: netlifyServer, needs: ['server/node', 'server/netlify'] },
     ...['node', 'python'].flatMap((server) => ['vanilla', 'react'].map((ui) => ({
         name: 'e2e:' + server + ':' + ui,
         cwd: at('tests', 'e2e'),
@@ -44,6 +66,33 @@ const STAGES = [
         needs: server === 'python' ? ['tests/e2e', 'python'] : ['tests/e2e', 'server/node'],
         browser: true
     }))),
+    ...['vanilla', 'react'].map((ui) => ({
+        name: 'e2e:nextjs:' + ui,
+        cwd: at('tests', 'e2e'),
+        run: ['npx', 'playwright', 'test', '--project=' + ui],
+        env: nextjsServer,
+        needs: ['tests/e2e', 'server/node', 'server/nextjs'],
+        browser: true
+    })),
+    ...['vanilla', 'react'].map((ui) => ({
+        name: 'e2e:netlify:' + ui,
+        cwd: at('tests', 'e2e'),
+        run: ['npx', 'playwright', 'test', '--project=' + ui],
+        env: netlifyServer,
+        needs: ['tests/e2e', 'server/node', 'server/netlify'],
+        browser: true
+    })),
+    // Build each image, then run the conformance suite against a container of it,
+    // the smoke checks and the leak checks on its contents. Slow, so not in --fast.
+    ...['node', 'python'].map((server) => ({
+        name: 'container:' + server,
+        cwd: ROOT,
+        run: ['node', 'scripts/container-check.mjs', server],
+        skip: noDocker,
+        container: true
+    })),
+    // compose.yaml itself: it builds and starts both servers with secrets from files.
+    { name: 'container:compose', cwd: ROOT, run: ['node', '--test', '--test-reporter=spec', 'tests/compose-smoke.test.js'], skip: noDocker, container: true },
     { name: 'leaks', cwd: ROOT, run: ['node', '--test', '--test-reporter=spec', 'tests/leak-check.test.js'] }
 ];
 
@@ -52,14 +101,25 @@ if (args.includes('--list')) {
     process.exit(0);
 }
 
-const selected = STAGES.filter((stage) => (only ? only.split(',').includes(stage.name) : !(fast && stage.browser)));
+if (args.includes('--install-only')) {
+    const needs = [...new Set(STAGES.filter((s) => !s.skip).flatMap((s) => s.needs || []))];
+    const error = await prepare(needs);
+    if (noPython) console.log('Python was not set up: ' + noPython);
+    if (error) {
+        console.error(error);
+        process.exit(1);
+    }
+    console.log('Installed: ' + needs.join(', '));
+    process.exit(0);
+}
+
+const selected = STAGES.filter((stage) => (only ? only.split(',').includes(stage.name) : !(fast && (stage.browser || stage.container))));
 if (only && selected.length === 0) {
     console.error('No stage matches --only ' + only + '. Stages:\n  ' + STAGES.map((s) => s.name).join('\n  '));
     process.exit(2);
 }
 
 const results = [];
-const prepared = new Set();
 for (const stage of selected) {
     if (stage.skip) {
         results.push({ name: stage.name, outcome: 'skipped', note: stage.skip });
@@ -76,8 +136,9 @@ for (const stage of selected) {
     results.push({
         name: stage.name,
         outcome: code === 0 ? 'passed' : 'failed',
-        counts: stage.build ? null : countsIn(output),
-        note: stage.build ? (code === 0 ? 'built' : 'build failed') : null,
+        counts: stage.build || stage.check ? null : countsIn(output),
+        note: stage.build ? (code === 0 ? 'built' : 'build failed')
+            : stage.check ? (code === 0 ? 'clean' : 'problems found') : null,
         seconds: ((Date.now() - started) / 1000).toFixed(1)
     });
 }
@@ -114,7 +175,7 @@ async function preparePython() {
     const probe = spawnSync(python, ['-c', 'import flask, pytest'], { cwd: at('server', 'python') });
     if (probe.status === 0) return null;
     if (python !== venvPython) {
-        const created = await run([python, '-m', 'venv', '.venv'], at('server', 'python'));
+        const created = await run([python, '-m', 'venv', '--clear', '.venv'], at('server', 'python'));
         if (created.code !== 0) return 'could not create server/python/.venv';
     }
     const installed = await run([venvPython, '-m', 'pip', 'install', '-q', '-r', 'requirements-dev.txt'], at('server', 'python'));
@@ -125,9 +186,17 @@ async function preparePython() {
 }
 
 function findPython() {
-    const candidates = [process.env.PYTHON, venvInterpreter(), 'python3', 'python'].filter(Boolean);
+    const candidates = [process.env.PYTHON, venvInterpreter(), 'python3', 'python', 'python3.13', 'python3.12', 'python3.11']
+        .filter(Boolean);
+    // Ubuntu's system python3 ships without ensurepip, so it cannot build the
+    // virtualenv. Such an interpreter only qualifies if the packages are already there.
+    const check = [
+        'import importlib.util as u, sys',
+        'usable = all(u.find_spec(m) for m in ("flask", "pytest")) or all(u.find_spec(m) for m in ("ensurepip", "venv"))',
+        'print(sys.version_info >= (3, 11) and usable)'
+    ].join('\n');
     for (const candidate of candidates) {
-        const probe = spawnSync(candidate, ['-c', 'import sys; print(sys.version_info >= (3, 9))'], { encoding: 'utf8' });
+        const probe = spawnSync(candidate, ['-c', check], { encoding: 'utf8' });
         if (probe.status === 0 && probe.stdout.trim() === 'True') return candidate;
     }
     return null;
@@ -142,7 +211,7 @@ function venvInterpreter() {
 function switchPython(interpreter) {
     for (const stage of STAGES) {
         if (stage.run[0] === python) stage.run[0] = interpreter;
-        if (stage.env && stage.env.SERVER_CMD) stage.env.SERVER_CMD = quote(interpreter) + ' -m starter_crm';
+        if (stage.env === pythonServer) stage.env.SERVER_CMD = quote(interpreter) + ' -m starter_crm';
     }
 }
 

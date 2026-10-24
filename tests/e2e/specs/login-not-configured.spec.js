@@ -5,7 +5,8 @@ import { test, expect } from '../support/test.js';
 
 test.use({ serverMode: 'login-not-configured' });
 
-test.describe('login mode without AUTH0_CLIENT_ID', () => {
+// @fake-only: a server mode that needs no Drop Cowboy account at all.
+test.describe('login mode without AUTH0_CLIENT_ID @fake-only', () => {
     test('explains how to set up sign-in', async ({ page, app, dropcowboy }) => {
         await app.goto('/setup');
 

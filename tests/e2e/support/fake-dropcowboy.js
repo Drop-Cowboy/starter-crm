@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import { isTestNumber } from '../../../shared/sandbox.js';
 import * as data from './data.js';
 
 // One fake Drop Cowboy account, reached two ways:
@@ -12,6 +13,13 @@ import * as data from './data.js';
 // Both sides share the tokens: the browser is only let in with a token the
 // server minted, carrying the scope the endpoint needs. That is how the real
 // service behaves, so a page that used the wrong token would fail here too.
+//
+// It also plays the sandbox the way the real account does for 555 test
+// numbers (+1 555 XXX XXXX): a text to one gets the automatic reply
+// "sandbox got your message: <text>", delivered to the starter server as a
+// signed contact.msg.received webhook, and sandboxMode() makes readiness
+// report sandbox_only and refuses texts to any other number. Calls go over
+// SIP, which the fake does not speak; the live sandbox spec covers those.
 
 export const WIDGET_API_ORIGIN = 'https://app-api-v2.dropcowboy.com';
 
@@ -45,6 +53,16 @@ class FakeDropCowboy {
         this.unhandled = [];
         this.mintRefusals = new Map();
         this.textRefusal = null;
+        this.readinessPatch = null;
+        this.sandboxOnly = false;
+        // Texts the browser sent, and the sandbox replies they got, in order.
+        this.texts = [];
+        this.sandboxReplies = [];
+        // Inbound messages per contact id, for the conversation thread.
+        this.threads = new Map();
+        // How a sandbox reply reaches the starter server: set by the
+        // `context` fixture in test.js to a signed webhook delivery.
+        this.deliverInbound = null;
         this.contacts = new Map();
         for (const contact of data.startingContacts()) {
             this.contacts.set(contact.contact_id, contact);
@@ -61,6 +79,26 @@ class FakeDropCowboy {
     /** Every text is refused with `code` (e.g. consent_required). */
     refuseTexts(code) {
         this.textRefusal = code;
+    }
+
+    /** Merges `patch` into what the readiness check answers, for this test only. */
+    setReadiness(patch) {
+        this.readinessPatch = patch;
+    }
+
+    /**
+     * Sandbox mode, as for a team with no carrier or no funds: readiness
+     * reports sandbox_only, session tokens carry the sandbox_only claim, and
+     * texts to anything but a 555 test number are refused with sandbox_only.
+     */
+    sandboxMode() {
+        this.sandboxOnly = true;
+        this.setReadiness(data.SANDBOX_READINESS);
+    }
+
+    /** The readiness check's answer: the starting account plus any patch. */
+    readiness() {
+        return Object.assign({}, data.READINESS, this.readinessPatch);
     }
 
     /** Makes every live token with `scope` stop working, as if it had expired early. */
@@ -125,7 +163,7 @@ class FakeDropCowboy {
             return reply(answer.status, answer.body);
         }
         if (req.method === 'GET' && path === '/register/public/integration-readiness') {
-            return reply(200, { data: data.READINESS });
+            return reply(200, { data: this.readiness() });
         }
         return reply(404, problem(404, 'not-found', 'No route matches ' + req.method + ' ' + path));
     }
@@ -155,6 +193,9 @@ class FakeDropCowboy {
             team_id: data.TEAM_ID,
             site_id: body.site_id,
             scope,
+            // Like the real service: a calling token for a team in sandbox
+            // mode says so, and reaches 555 test numbers only.
+            sandbox_only: this.sandboxOnly && scope.includes('dialer:webrtc') ? true : undefined,
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(expiresAt / 1000),
             jti: crypto.randomUUID()
@@ -168,9 +209,9 @@ class FakeDropCowboy {
 
     /**
      * @param {{ method: string, url: string, headers: Record<string, string>, body: string | null }} request
-     * @returns {{ status: number, headers: Record<string, string>, body: string }}
+     * @returns {Promise<{ status: number, headers: Record<string, string>, body: string }>}
      */
-    answerBrowser(request) {
+    async answerBrowser(request) {
         const url = new URL(request.url);
         if (request.method === 'OPTIONS') {
             return { status: 204, headers: CORS_HEADERS, body: '' };
@@ -184,7 +225,7 @@ class FakeDropCowboy {
         };
         this.calls.push(call);
 
-        const [status, body] = this.route(call, request.headers.authorization || '');
+        const [status, body] = await this.route(call, request.headers.authorization || '');
         call.status = status;
         return {
             status,
@@ -249,7 +290,14 @@ class FakeDropCowboy {
         return stage ? stage.contacts.map((id) => this.contacts.get(id)).filter(Boolean) : [];
     }
 
-    text(body) {
+    /**
+     * POST /phone/embed/sms. The Dock sends `{ contact_id, phone_number,
+     * caller_id, sms_body }`. A text to a 555 test number gets the sandbox's
+     * automatic reply, delivered to the starter server before this answers,
+     * so a test can expect it as soon as the send has gone through.
+     */
+    async text(body) {
+        const send = body || {};
         if (this.textRefusal === 'consent_required') {
             return [403, {
                 message: 'A valid consent_id is required for this embed send',
@@ -259,7 +307,45 @@ class FakeDropCowboy {
         if (this.textRefusal) {
             return [403, { message: 'Text refused', detail: { code: this.textRefusal } }];
         }
-        return [200, { data: { sms_id: crypto.randomUUID(), status: 'queued', to: body && body.to } }];
+        const testNumber = isTestNumber(send.phone_number);
+        if (this.sandboxOnly && !testNumber) {
+            return [403, {
+                message: 'This team can reach 555 test numbers only until a carrier is connected and funded',
+                detail: { code: 'sandbox_only' }
+            }];
+        }
+        const smsId = crypto.randomUUID();
+        this.texts.push({ sms_id: smsId, contact_id: send.contact_id, to: send.phone_number, from: send.caller_id || null, body: send.sms_body });
+        if (testNumber) {
+            await this.sandboxReply(send);
+        }
+        return [200, { data: { sms_id: smsId, status: 'queued', to: send.phone_number } }];
+    }
+
+    /** The automatic reply to a text to a 555 test number, through the inbound webhook. */
+    async sandboxReply(send) {
+        const reply = {
+            sms_id: crypto.randomUUID(),
+            contact_id: send.contact_id,
+            sms_type: 'inbound',
+            sms_body: data.SANDBOX_REPLY_PREFIX + (send.sms_body || ''),
+            created_at: new Date().toISOString()
+        };
+        this.sandboxReplies.push(reply);
+        if (send.contact_id) {
+            const thread = this.threads.get(send.contact_id) || [];
+            thread.push(reply);
+            this.threads.set(send.contact_id, thread);
+        }
+        if (this.deliverInbound) {
+            const delivery = await this.deliverInbound({
+                event: 'contact.msg.received',
+                data: { contact_id: send.contact_id, from: send.phone_number, to: send.caller_id, body: reply.sms_body }
+            });
+            if (delivery.status !== 200) {
+                this.unhandled.push('sandbox reply webhook answered ' + delivery.status);
+            }
+        }
     }
 }
 
@@ -339,7 +425,9 @@ const BROWSER_ROUTES = [
     },
     {
         method: 'GET', path: new RegExp('^/phone/public/sms/thread/' + UUID + '$'), scope: 'contacts',
-        answer: (fake, call, [, id]) => [200, { data: { smss: id === data.CONVERSATION.contact_id ? threadFor(id) : [] } }]
+        answer: (fake, call, [, id]) => [200, {
+            data: { smss: (id === data.CONVERSATION.contact_id ? threadFor(id) : []).concat(fake.threads.get(id) || []) }
+        }]
     },
     {
         method: 'GET', path: /^\/phone\/embed\/inbox$/, scope: 'dialer:webrtc',

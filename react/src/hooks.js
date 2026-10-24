@@ -155,6 +155,25 @@ export function useModalDialog(open) {
     return ref;
 }
 
+/**
+ * Whether readiness says this team reaches 555 test numbers only
+ * (crm.sandboxOnly()). False until the answer arrives, and whenever it cannot
+ * be read, so pages behave as before when the field is absent.
+ * @returns {boolean}
+ */
+export function useSandboxOnly() {
+    const crm = useCrm();
+    const [sandboxOnly, setSandboxOnly] = useState(false);
+    useEffect(() => {
+        let current = true;
+        crm.sandboxOnly().then((on) => current && setSandboxOnly(on));
+        return () => {
+            current = false;
+        };
+    }, [crm]);
+    return sandboxOnly;
+}
+
 /** Everything in the activity log, newest first, kept current. */
 export function useActivityItems() {
     const crm = useCrm();

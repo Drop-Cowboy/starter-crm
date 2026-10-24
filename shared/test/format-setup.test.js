@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { contactName, formatPhone, isEmail, toE164 } from '../format.js';
-import { getBusinessNumber, setBusinessNumber } from '../settings.js';
-import { isReady, itemStatus, setupChecklist } from '../setup.js';
+import { getBusinessNumber, getThemeChoice, setBusinessNumber, setThemeChoice } from '../settings.js';
+import { isReady, itemStatus, setupChecklist, webhookItem } from '../setup.js';
 import { memoryStorage } from './helpers.js';
 
 describe('format', () => {
@@ -33,6 +33,19 @@ describe('settings', () => {
         assert.deepEqual(storage.keys(), ['starter-crm.business-number']);
         assert.equal(setBusinessNumber('nope', storage), '');
         assert.deepEqual(storage.keys(), []);
+    });
+
+    it('remembers a light or dark theme, and forgets it for system or anything unknown', () => {
+        const storage = memoryStorage();
+        assert.equal(getThemeChoice(storage), 'system');
+        assert.equal(setThemeChoice('dark', storage), 'dark');
+        assert.equal(getThemeChoice(storage), 'dark');
+        assert.deepEqual(storage.keys(), ['starter-crm.theme']);
+        assert.equal(setThemeChoice('system', storage), 'system');
+        assert.deepEqual(storage.keys(), []);
+        assert.equal(setThemeChoice('purple', storage), 'system');
+        storage.setItem('starter-crm.theme', 'purple');
+        assert.equal(getThemeChoice(storage), 'system');
     });
 });
 
@@ -73,5 +86,32 @@ describe('setup checklist', () => {
         const items = setupChecklist(null, { siteId: null, businessNumber: '+13125550100' });
         assert.equal(items.find((i) => i.id === 'connect_byoc').done, null);
         assert.equal(isReady(items), true);
+    });
+});
+
+describe('webhookItem', () => {
+    const OK = { store: 'sqlite', webhooks: 'store', max_attempts: 8, received: 1, processed: 40, failed: 0, oldest_received_age_seconds: 2 };
+
+    it('is done when events are being handled', () => {
+        const item = webhookItem(OK);
+        assert.equal(item.done, true);
+        assert.match(item.help, /40 done, 1 waiting/);
+    });
+
+    it('is a to-do naming the replay commands when an event failed', () => {
+        const item = webhookItem({ ...OK, failed: 2 });
+        assert.equal(item.done, false);
+        assert.match(item.help, /2 events used all 8 handler attempts/);
+        assert.match(item.help, /webhooks:replay/);
+    });
+
+    it('is a to-do when an event has waited for a worker too long', () => {
+        const item = webhookItem({ ...OK, oldest_received_age_seconds: 600 });
+        assert.equal(item.done, false);
+        assert.match(item.help, /oldest for 10 minutes/);
+    });
+
+    it('is unknown when the server cannot be asked', () => {
+        assert.equal(webhookItem(null).done, null);
     });
 });

@@ -1,6 +1,7 @@
-# GitHub Actions only. Drop Cowboy bumps the npm and pip dependencies in its
-# own source repository and publishes them here. In your own copy, add npm and
-# pip entries if you want Dependabot to bump those too.
+# GitHub Actions and the base images in the two Dockerfiles. Drop Cowboy bumps
+# the npm and pip dependencies in its own source repository and publishes them
+# here. In your own copy, add npm and pip entries if you want Dependabot to bump
+# those too.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,4 +10,13 @@ updates:
       interval: weekly
     groups:
       actions:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /server/python
+    schedule:
+      interval: weekly
+    groups:
+      images:
         patterns: ['*']

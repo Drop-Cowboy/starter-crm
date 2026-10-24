@@ -10,8 +10,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from starter_crm.app import create_app
 from starter_crm.config import load_config
-from starter_crm.events import EventStore
 from starter_crm.log import Logger
+from starter_crm.runtime import default_runtime
 
 SITE_ID = "3f8a2c1e-9b4d-4e7a-8c2f-1d5e6a7b8c9d"
 USER_ID = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
@@ -41,15 +41,24 @@ def make_config(**env):
         "STARTER_CRM_ROOT": "/nonexistent-starter-root",
     }
     values.update(env)
+    # Redis cannot hold module data, so a test that picks the Redis store names where documents go.
+    if values.get("DC_STORE") == "redis":
+        values.setdefault("DC_DATA", "sqlite")
     config, problems = load_config(values)
     if problems:
-        raise AssertionError("; ".join(problems))
+        raise AssertionError("; ".join(p.message for p in problems))
     return config
 
 
-def make_client(config, store=None):
-    silent = Logger([], stdout=SilentStream(), stderr=SilentStream())
-    return create_app(config, log=silent, store=store or EventStore()).test_client()
+def silent_logger():
+    """A logger that drops everything, for tests that do not read the log."""
+    return Logger([], stdout=SilentStream(), stderr=SilentStream())
+
+
+def make_client(config, runtime=None):
+    """A test client over an app with a memory runtime (inline handling) unless ``runtime`` is given."""
+    silent = silent_logger()
+    return create_app(config, log=silent, runtime=runtime or default_runtime(config, silent)).test_client()
 
 
 def sign(raw_body: str, secret: str, timestamp: str) -> str:
@@ -114,3 +123,38 @@ class FakeUpstream:
     def close(self):
         self.server.shutdown()
         self.server.server_close()
+
+
+def make_booted_client(root, **env):
+    """Boots the way ``python -m starter_crm`` does (providers included) and returns a test client.
+
+    Keyword arguments override variables; the log is silenced so test output stays readable.
+    """
+    from starter_crm.bootstrap import bootstrap
+
+    values = {
+        "DC_AUTH_MODE": "server",
+        "DROPCOWBOY_API_KEY": API_KEY,
+        "DROPCOWBOY_API_SECRET": API_SECRET,
+        "DROPCOWBOY_SITE_ID": SITE_ID,
+        "DROPCOWBOY_WEBHOOK_SECRET": WEBHOOK_SECRET,
+        "DROPCOWBOY_API_BASE": "https://api.example.test",
+        "STARTER_CRM_USER_ID": USER_ID,
+        "STARTER_CRM_ROOT": str(root),
+    }
+    values.update(env)
+    booted = bootstrap(values, root)
+    if booted.problems:
+        raise AssertionError("; ".join(p.code + ": " + p.message for p in booted.problems))
+    silent = Logger(lambda: booted.config.known_secrets, stdout=SilentStream(), stderr=SilentStream())
+    app = create_app(
+        booted.config,
+        log=silent,
+        runtime=booted.runtime,
+        identity=booted.identity,
+        ratelimit=booted.ratelimit,
+        observer=booted.observer,
+        secrets=booted.secrets,
+    )
+    # No cookie jar: a test sends the Cookie header it means to, so a stale session cannot hide a bug.
+    return app.test_client(use_cookies=False), booted

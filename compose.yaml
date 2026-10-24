@@ -1,0 +1,161 @@
+# Runs the Starter CRM in a container, from the repository, with no other setup.
+#
+#   docker compose up --build                                       # the Node server
+#   docker compose --profile python up --build starter-crm-python   # the Python server instead
+#
+# Both serve http://localhost:8080 (change it with PORT). Run one at a time.
+#
+# Events are kept in SQLite on the `starter-crm-data` volume, so they survive a
+# restart (DC_STORE=sqlite). To run more than one web instance, or to move the
+# webhook handlers into their own container, use Redis (Valkey) and a worker:
+#
+#   # in .env: DC_STORE=redis, DC_DATA=sqlite, DC_REDIS_URL=redis://redis:6379, DC_WORKER_IN_PROCESS=off,
+#   # and DC_INSECURE_PRIVATE_SERVICES=on (the Valkey container is on this project's own
+#   # private network, so plain redis:// is acceptable; any other host needs rediss://)
+#   docker compose --profile redis up --build               # Node server + Valkey + worker
+#   docker compose --profile python --profile python-redis up --build   # the Python equivalents
+#
+# Valkey runs with AOF persistence and maxmemory-policy noeviction, which BullMQ
+# requires. Use your cloud's managed Redis or Postgres in production (HOSTING.md).
+#
+# Settings come from three places, so a secret never sits in this file:
+#
+# - Non-secret settings: your shell, or a .env file next to this one. Compose
+#   reads .env to fill the ${...} placeholders below, and for nothing else.
+# - Secrets: one file per secret in ./secrets, named like the variable
+#   (DROPCOWBOY_API_KEY, DROPCOWBOY_API_SECRET, DROPCOWBOY_WEBHOOK_SECRET,
+#   DC_PASSCODE). Compose mounts them at /run/secrets, and DC_SECRETS=file reads
+#   them there. They never enter the container's environment, so `docker inspect`
+#   does not show them. ./secrets is git-ignored; SECRETS_DIR points elsewhere.
+# - Everything else: the defaults in the Dockerfile.
+#
+# The container runs as user 1000, so each secret file must be readable by it:
+#   mkdir -p secrets && chmod 700 secrets
+#   printf '%s' "$YOUR_KEY" > secrets/DROPCOWBOY_API_KEY && chmod 600 secrets/DROPCOWBOY_API_KEY
+# On Linux that works when your own user id is 1000. If it is not, `sudo chown
+# 1000 secrets/*`, or `chmod 640` and give the files to a group 1000 belongs to.
+# On Docker Desktop for Mac and Windows file ownership is translated for you.
+#
+# DC_ENV is production inside the image, so DC_IDENTITY=dev is refused: choose
+# passcode (the default here) or oidc. `npm run setup` writes DC_IDENTITY=dev to
+# .env for local use, and Compose would pass that on, so start Compose with
+# DC_IDENTITY=passcode in front of the command (HOSTING.md). See PRODUCTION.md
+# before exposing the port.
+#
+# Only the settings listed under `environment:` below reach the container. To
+# pass another, such as a custom provider's own setting, add a line for it.
+
+x-starter-crm: &starter-crm
+    environment:
+        DC_AUTH_MODE: server
+        DC_IDENTITY: ${DC_IDENTITY:-passcode}
+        DC_SECRETS: file
+        DC_SECRETS_DIR: /run/secrets
+        DROPCOWBOY_SITE_ID: ${DROPCOWBOY_SITE_ID:?Set DROPCOWBOY_SITE_ID to one stable UUID in .env. `npm run setup` writes one, or run node -e "console.log(crypto.randomUUID())"}
+        DC_PUBLIC_URL: ${DC_PUBLIC_URL:-http://localhost:${PORT:-8080}}
+        DC_TRUST_PROXY: ${DC_TRUST_PROXY:-}
+        DC_OIDC_ISSUER: ${DC_OIDC_ISSUER:-}
+        DC_OIDC_AUDIENCE: ${DC_OIDC_AUDIENCE:-}
+        DC_OIDC_JWKS_URL: ${DC_OIDC_JWKS_URL:-}
+        DC_CDN_VERSION: ${DC_CDN_VERSION:-}
+        DC_STORE: ${DC_STORE:-sqlite}
+        DC_DATA: ${DC_DATA:-}
+        DC_FANOUT: ${DC_FANOUT:-}
+        DC_WEBHOOKS: ${DC_WEBHOOKS:-}
+        DC_REDIS_URL: ${DC_REDIS_URL:-}
+        DC_INSECURE_PRIVATE_SERVICES: ${DC_INSECURE_PRIVATE_SERVICES:-off}
+        DC_WORKER_IN_PROCESS: ${DC_WORKER_IN_PROCESS:-on}
+        DC_WEBHOOK_HANDLERS: ${DC_WEBHOOK_HANDLERS:-}
+    secrets:
+        - DROPCOWBOY_API_KEY
+        - DROPCOWBOY_API_SECRET
+        - DROPCOWBOY_WEBHOOK_SECRET
+        - DC_PASSCODE
+    volumes:
+        - starter-crm-data:/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+        - /tmp
+    cap_drop:
+        - ALL
+    security_opt:
+        - no-new-privileges:true
+    stop_grace_period: 15s
+
+# Loopback only: put a TLS proxy in front before exposing it (PRODUCTION.md).
+x-web-ports: &web-ports
+    ports:
+        - "127.0.0.1:${PORT:-8080}:8080"
+
+services:
+    starter-crm:
+        <<: [*starter-crm, *web-ports]
+        build:
+            context: .
+            dockerfile: Dockerfile
+
+    starter-crm-python:
+        <<: [*starter-crm, *web-ports]
+        profiles: ["python"]
+        build:
+            context: .
+            dockerfile: server/python/Dockerfile
+
+    # A worker: the same image and settings as the web server, no port, and the
+    # command that runs only the webhook handlers. Needs DC_WORKER_IN_PROCESS=off
+    # on the web server and a store both can reach (DC_STORE=redis here).
+    starter-crm-worker:
+        <<: *starter-crm
+        profiles: ["redis"]
+        image: starter-crm-node-worker
+        build:
+            context: .
+            dockerfile: Dockerfile
+        command: ["node", "src/worker.js"]
+        healthcheck:
+            disable: true
+        depends_on:
+            redis:
+                condition: service_healthy
+
+    starter-crm-python-worker:
+        <<: *starter-crm
+        profiles: ["python-redis"]
+        image: starter-crm-python-worker
+        build:
+            context: .
+            dockerfile: server/python/Dockerfile
+        command: ["python", "-m", "starter_crm.worker"]
+        healthcheck:
+            disable: true
+        depends_on:
+            redis:
+                condition: service_healthy
+
+    redis:
+        image: valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+        profiles: ["redis", "python-redis"]
+        command: ["valkey-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+        volumes:
+            - starter-crm-redis:/data
+        restart: unless-stopped
+        healthcheck:
+            test: ["CMD", "valkey-cli", "ping"]
+            interval: 5s
+            timeout: 3s
+            retries: 10
+
+volumes:
+    starter-crm-data:
+    starter-crm-redis:
+
+secrets:
+    DROPCOWBOY_API_KEY:
+        file: ${SECRETS_DIR:-./secrets}/DROPCOWBOY_API_KEY
+    DROPCOWBOY_API_SECRET:
+        file: ${SECRETS_DIR:-./secrets}/DROPCOWBOY_API_SECRET
+    DROPCOWBOY_WEBHOOK_SECRET:
+        file: ${SECRETS_DIR:-./secrets}/DROPCOWBOY_WEBHOOK_SECRET
+    DC_PASSCODE:
+        file: ${SECRETS_DIR:-./secrets}/DC_PASSCODE

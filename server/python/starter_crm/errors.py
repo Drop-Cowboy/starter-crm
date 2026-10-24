@@ -1,4 +1,7 @@
-"""Every error leaves this server as ``{"error": {"code", "message"}}``.
+"""Every error leaves this server as ``{"error": {"code", "message", "request_id"}}``.
+
+The request id is the one echoed in ``X-Request-Id``, so a user can quote it
+and you can find the matching log lines.
 
 See "Error envelope" in ../CONTRACT.md.
 """
@@ -8,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, has_request_context, jsonify, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound, RequestEntityTooLarge
 
 from .log import Logger
@@ -30,6 +33,14 @@ class HttpError(Exception):
     """Raise this from any route to answer with the error envelope."""
 
     def __init__(self, status: int, code: str, message: str, headers: Mapping[str, str] | None = None):
+        """Records the answer to send.
+
+        Args:
+            status: HTTP status code.
+            code: Stable machine-readable error code from CONTRACT.md.
+            message: Plain-language text safe to show a user; never a secret.
+            headers: Extra response headers, such as ``Retry-After``.
+        """
         super().__init__(message)
         self.status = status
         self.code = code
@@ -38,7 +49,19 @@ class HttpError(Exception):
 
 
 def error_response(status: int, code: str, message: str, headers: Mapping[str, str] | None = None):
-    response = jsonify({"error": {"code": code, "message": message}})
+    """Builds the ``{ error: { code, message, request_id } }`` envelope.
+
+    Args:
+        status: HTTP status code.
+        code: Stable machine-readable error code.
+        message: Plain-language text safe to show a user.
+        headers: Extra response headers.
+
+    Returns:
+        A Flask response with the envelope as JSON.
+    """
+    request_id = g.get("request_id") if has_request_context() else None
+    response = jsonify({"error": {"code": code, "message": message, "request_id": request_id}})
     response.status_code = status
     for name, value in (headers or {}).items():
         response.headers[name] = value
@@ -87,7 +110,12 @@ def upstream_code(status: int, body: Any) -> str:
 
 
 def register_error_handlers(app: Flask, log: Logger) -> None:
-    """Turns every exception a route can raise into the envelope."""
+    """Turns every exception a route can raise into the envelope.
+
+    Args:
+        app: The Flask app.
+        log: The root logger; a request's own logger (``g.log``, tagged with its id) is preferred.
+    """
 
     @app.errorhandler(HttpError)
     def handle_http_error(err: HttpError):
@@ -105,11 +133,27 @@ def register_error_handlers(app: Flask, log: Logger) -> None:
 
     @app.errorhandler(Exception)
     def handle_unexpected(err: Exception):
-        log.error("Unhandled error on", request.method, request.path + ":", err)
+        request_log = g.get("log") or log
+        request_log.error("Unhandled error on", request.method, request.path + ":", err)
+        hooks = app.config.get("STARTER_CRM_HOOKS")
+        if hooks is not None:
+            hooks.on_error(
+                {
+                    "request_id": g.get("request_id"),
+                    "method": request.method,
+                    "path": request.path,
+                    "message": str(err) or err.__class__.__name__,
+                }
+            )
         return error_response(500, "internal_error", "Something went wrong on this server.")
 
 
 def not_found_response():
+    """Builds the 404 ``not_found`` envelope for the current request.
+
+    Returns:
+        A Flask response naming the method and path that matched nothing.
+    """
     return error_response(404, "not_found", "No route matches " + request.method + " " + request.path + ".")
 
 

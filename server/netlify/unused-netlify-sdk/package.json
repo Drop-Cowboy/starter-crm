@@ -1,0 +1,6 @@
+{
+  "name": "@netlify/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Installed in place of @netlify/sdk, which @netlify/async-workloads declares but never imports. It has no code, so an import of it fails loudly. See server/netlify/README.md."
+}

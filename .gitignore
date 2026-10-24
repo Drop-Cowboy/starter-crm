@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 .dropcowboy/
+.live-state/
+# One file per secret for the Compose file provider (compose.yaml).
+/secrets/
 
 # Node. The repo root ignores lockfiles; this published sample pins its
 # dependencies, and its CI installs with npm ci.
@@ -26,3 +29,7 @@ coverage/
 # Building Blocks downloaded by the browser tests. They are closed source:
 # never commit them.
 tests/e2e/.cdn-cache/
+
+# Vercel and Netlify CLI links for the sandbox deploys
+.vercel/
+.netlify/

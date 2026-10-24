@@ -1,0 +1,21 @@
+{
+  "description": "Test vectors shared by the Node and Python implementations, so both behave the same on the details that are easy to get subtly different.",
+  "uuidv5": [
+    { "namespace": "6ba7b810-9dad-11d1-80b4-00c04fd430c8", "name": "python.org", "expect": "886313e1-3b8a-5372-9b90-0c9aee199e5d" },
+    { "namespace": "3f8a2c1e-9b4d-4e7a-8c2f-1d5e6a7b8c9d", "name": "passcode|owner", "expect": "d78c8364-ee19-5a1c-b376-fe9679c105b6" }
+  ],
+  "redaction": [
+    { "input": "call +13125550142 now", "secrets": [], "expect": "call [redacted-phone] now" },
+    { "input": "call (312) 555-0142 now", "secrets": [], "expect": "call [redacted-phone] now" },
+    { "input": "call 312.555.0142 now", "secrets": [], "expect": "call [redacted-phone] now" },
+    { "input": "mail jane.doe+crm@example.com please", "secrets": [], "expect": "mail [redacted-email] please" },
+    { "input": "at 1731000000000 ms", "secrets": [], "expect": "at 1731000000000 ms" },
+    { "input": "id 3f8a2c1e-9b4d-4e7a-8c2f-1d5e6a7b8c9d here", "secrets": [], "expect": "id 3f8a2c1e-9b4d-4e7a-8c2f-1d5e6a7b8c9d here" },
+    { "input": "id json-17F2BF58-3E5F-406A-9180-4123456789C4 here", "secrets": [], "expect": "id json-17F2BF58-3E5F-406A-9180-4123456789C4 here" },
+    { "input": "call 312-555-0142x12 or 4123456789c4", "secrets": [], "expect": "call [redacted-phone]x12 or [redacted-phone]c4" },
+    { "input": "authorization: bearer opaque.Access-Token~1== sent", "secrets": [], "expect": "authorization: Bearer [redacted] sent" },
+    { "input": "token eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln done", "secrets": [], "expect": "token [redacted-token] done" },
+    { "input": "key=unit-test-key-0001 and abc", "secrets": ["unit-test-key-0001", "abc"], "expect": "key=[redacted] and abc" }
+  ],
+  "ratelimit": { "key": "192.0.2.1", "limit": 2, "windowSeconds": 60, "sequence": [true, true, false, false], "otherKey": "192.0.2.2" }
+}

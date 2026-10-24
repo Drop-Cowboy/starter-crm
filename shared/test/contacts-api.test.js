@@ -88,19 +88,43 @@ describe('contacts API', () => {
         assert.equal(await createContactsApi({ tokens: fakeTokens(), fetch }).get('missing'), null);
     });
 
-    it('creates with fields and values, sending only filled fields', async () => {
-        const fetch = scriptedFetch([() => jsonResponse(201, { data: { inserted: [{ index: 0, contact_id: DANA.contact_id }], updated: [], rejected: [] } })]);
+    const NOBODY = () => jsonResponse(200, { data: { contacts: [], total_contacts: 0 } });
+
+    it('looks the phone up first, then creates with only the filled fields', async () => {
+        const fetch = scriptedFetch([
+            NOBODY,
+            () => jsonResponse(201, { data: { inserted: [{ index: 0, contact_id: DANA.contact_id }], updated: [], rejected: [] } })
+        ]);
         const result = await createContactsApi({ tokens: fakeTokens(), fetch }).create({ first_name: ' Dana ', email: '', main_phone: '+13125550142' });
         assert.deepEqual(result, { contact_id: DANA.contact_id, created: true });
-        const body = JSON.parse(fetch.calls[0].init.body);
+        assert.equal(new URL(fetch.calls[0].url).searchParams.get('phone'), '+13125550142');
+        const body = JSON.parse(fetch.calls[1].init.body);
         assert.deepEqual(body.fields, [{ type: 'first_name' }, { type: 'main_phone' }]);
         assert.deepEqual(body.values, [['Dana', '+13125550142']]);
         assert.equal(body.conflict_mode, 'append');
     });
 
-    it('reports an existing match as not created, and a rejected row as an error', async () => {
+    // Drop Cowboy matches an existing contact on email only, so a known phone
+    // with no email would become a second contact. The lookup prevents that.
+    it('writes nothing when the email or the phone already belongs to a contact', async () => {
+        const hit = () => jsonResponse(200, { data: { contacts: [DANA], total_contacts: 1 } });
+        const byEmail = scriptedFetch([hit]);
+        const api = (fetch) => createContactsApi({ tokens: fakeTokens(), fetch });
+        assert.deepEqual(await api(byEmail).create({ email: 'dana@example.com' }), { contact_id: DANA.contact_id, created: false });
+        assert.equal(byEmail.calls.length, 1);
+        assert.equal(new URL(byEmail.calls[0].url).searchParams.get('email'), 'dana@example.com');
+
+        const byPhone = scriptedFetch([NOBODY, hit]);
+        assert.equal((await api(byPhone).create({ email: 'new@example.com', main_phone: '+13125550142' })).created, false);
+        assert.equal(byPhone.calls.length, 2);
+        assert.ok(byPhone.calls.every((call) => call.init.method === undefined || call.init.method === 'GET'));
+    });
+
+    it('reports an existing match from the write as not created, and a rejected row as an error', async () => {
         const fetch = scriptedFetch([
+            NOBODY,
             () => jsonResponse(201, { data: { inserted: [], updated: [{ index: 0, contact_id: DANA.contact_id }], rejected: [] } }),
+            NOBODY,
             () => jsonResponse(201, { data: { inserted: [], updated: [], rejected: [{ index: 0, reasons: ['missing_identifier'] }] } })
         ]);
         const api = createContactsApi({ tokens: fakeTokens(), fetch });

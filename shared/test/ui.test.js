@@ -3,15 +3,20 @@ import { describe, it } from 'node:test';
 
 import { contactInitials } from '../format.js';
 import {
+    applyThemeChoice,
     iconHref,
     isCurrentPath,
     isPaletteShortcut,
+    nextThemeChoice,
     paletteItems,
     parsePaletteInput,
     readLayout,
     showsContactList,
-    syncWidgetTheme
+    syncWidgetTheme,
+    THEME_DISPLAY,
+    themeButtonLabel
 } from '../ui.js';
+import { THEME_CHOICES } from '../settings.js';
 
 const NINA = { id: 'b5e20c97-4d13-4a6f-8e7b-f09c3a21d6e4', first_name: 'Nina', last_name: 'Park', main_phone: '+15125550183', company: 'Parkside Clinic' };
 const OWEN = { id: '6f3b9d24-0e7a-4c81-95b6-2a1f8e7d4c30', first_name: 'Owen', last_name: 'Diaz', email: 'owen@example.com' };
@@ -21,7 +26,31 @@ function fakeRoot() {
     return {
         getAttribute: (name) => (name in attrs ? attrs[name] : null),
         setAttribute: (name, value) => { attrs[name] = value; },
+        removeAttribute: (name) => { delete attrs[name]; },
         attrs
+    };
+}
+
+/** A MutationObserver stand-in: `fire()` runs the callback, as an attribute change would. */
+function fakeObserver() {
+    const created = [];
+    class Observer {
+        constructor(callback) {
+            this.callback = callback;
+            this.observing = null;
+            created.push(this);
+        }
+        observe(target, options) {
+            this.observing = { target, options };
+        }
+        disconnect() {
+            this.observing = null;
+        }
+    }
+    return {
+        Observer,
+        created,
+        fire: () => created.forEach((o) => o.observing && o.callback([]))
     };
 }
 
@@ -103,6 +132,45 @@ describe('widget theme', () => {
         root.setAttribute('data-theme', 'dark');
         syncWidgetTheme(root, fakeMedia(false).matchMedia);
         assert.equal(root.attrs['data-dc-theme'], 'dark');
+    });
+
+    it('follows data-theme when it changes later, and stops watching when stopped', () => {
+        const root = fakeRoot();
+        const observer = fakeObserver();
+        const stop = syncWidgetTheme(root, fakeMedia(false).matchMedia, observer.Observer);
+        assert.deepEqual(observer.created[0].observing.options, { attributes: true, attributeFilter: ['data-theme'] });
+
+        applyThemeChoice(root, 'dark');
+        observer.fire();
+        assert.equal(root.attrs['data-dc-theme'], 'dark');
+
+        applyThemeChoice(root, 'system');
+        assert.equal(root.attrs['data-theme'], undefined);
+        observer.fire();
+        assert.equal(root.attrs['data-dc-theme'], 'light');
+
+        stop();
+        assert.equal(observer.created[0].observing, null);
+    });
+});
+
+describe('theme button', () => {
+    it('moves through system, light and dark, and back to system', () => {
+        assert.equal(nextThemeChoice('system'), 'light');
+        assert.equal(nextThemeChoice('light'), 'dark');
+        assert.equal(nextThemeChoice('dark'), 'system');
+    });
+
+    it('has a label and an icon for every choice', () => {
+        for (const choice of THEME_CHOICES) {
+            assert.ok(THEME_DISPLAY[choice].label);
+            assert.ok(THEME_DISPLAY[choice].icon);
+        }
+    });
+
+    it('names what it is now and what a click does', () => {
+        assert.equal(themeButtonLabel('system'), 'Theme: System. Switch to Light');
+        assert.equal(themeButtonLabel('dark'), 'Theme: Dark. Switch to System');
     });
 });
 

@@ -71,7 +71,7 @@ describe('error envelope on the wire', () => {
             type: 'https://api-v2.dropcowboy.com/errors/payment-required', title: 'Payment Required', status: 402, detail: 'Add funds to continue.', instance: CANARY
         })));
         expect(status).toBe(402);
-        expect(body).toEqual({ error: { code: 'payment-required', message: 'Add funds to continue.' } });
+        expect(body).toEqual({ error: { code: 'payment-required', message: 'Add funds to continue.', request_id: expect.any(String) } });
     });
 
     it('maps a timeout to 504 upstream_timeout', async () => {
@@ -100,6 +100,6 @@ describe('error envelope on the wire', () => {
         app = await startApp(makeConfig());
         const res = await fetch(app.url + '/api/nothing-here?x=1');
         expect(res.status).toBe(404);
-        expect(await res.json()).toEqual({ error: { code: 'not_found', message: 'No route matches GET /api/nothing-here.' } });
+        expect(await res.json()).toEqual({ error: { code: 'not_found', message: 'No route matches GET /api/nothing-here.', request_id: res.headers.get('x-request-id') } });
     });
 });

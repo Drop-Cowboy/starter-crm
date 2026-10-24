@@ -34,14 +34,17 @@ describe('isLoopbackHost', () => {
 });
 
 describe('the loopback guard', () => {
-    async function call(req) {
+    // The route takes the core's request context: a web Request, plus the TCP
+    // peer address the host reports (a Request cannot carry it).
+    async function call({ remoteAddress, headers }) {
         const route = devSessionRoute(makeConfig({ DC_AUTH_MODE: 'mcp-session' }));
-        return route(req, { set() {}, json() {} }).then(() => null, (err) => err);
+        const request = new Request('http://localhost:8080/__dev/session', { headers });
+        return route({ request, remoteAddress }).then(() => null, (err) => err);
     }
 
     it('ignores X-Forwarded-For and judges the socket address', async () => {
         const err = await call({
-            socket: { remoteAddress: '203.0.113.9' },
+            remoteAddress: '203.0.113.9',
             headers: { host: 'localhost:8080', 'x-forwarded-for': '127.0.0.1', 'x-real-ip': '127.0.0.1', forwarded: 'for=127.0.0.1' }
         });
         expect(err.status).toBe(403);
@@ -49,7 +52,7 @@ describe('the loopback guard', () => {
     });
 
     it('refuses a loopback peer that sent a foreign Host', async () => {
-        const err = await call({ socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'evil.example:8080' } });
+        const err = await call({ remoteAddress: '127.0.0.1', headers: { host: 'evil.example:8080' } });
         expect(err.code).toBe('loopback_only');
     });
 });

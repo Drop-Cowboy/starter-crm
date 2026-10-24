@@ -7,7 +7,7 @@
   "type": "module",
   "main": "src/index.js",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24"
   },
   "scripts": {
     "start": "node src/index.js",
@@ -17,13 +17,29 @@
     "conformance": "node ../conformance/run.js"
   },
   "dependencies": {
+    "@1password/sdk": "0.5.0",
+    "@aws-sdk/client-dynamodb": "3.1150.0",
+    "@aws-sdk/client-secrets-manager": "3.1150.0",
+    "@aws-sdk/client-sqs": "3.1150.0",
+    "@aws-sdk/client-ssm": "3.1150.0",
+    "@aws-sdk/lib-dynamodb": "3.1150.0",
+    "@upstash/qstash": "2.12.0",
+    "@vercel/queue": "0.8.0",
+    "bullmq": "6.3.13",
     "dotenv": "18.0.5",
-    "express": "5.2.1"
+    "express": "5.2.1",
+    "ioredis": "6.0.0",
+    "jose": "6.2.12",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.11.0",
+    "eslint-plugin-jsdoc": "65.3.1",
     "globals": "17.13.0",
     "vitest": "5.0.3"
+  },
+  "overrides": {
+    "vite": "8.3.5"
   }
 }

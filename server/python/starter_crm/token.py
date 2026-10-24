@@ -12,14 +12,18 @@ team that has neither.
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
 from types import MappingProxyType
-from typing import Any, Callable
+from typing import Any
 
-from flask import g, jsonify, request
+from flask import g, jsonify
 
+from .body import read_json_body
 from .config import Config
 from .errors import HttpError
-from .json_utils import is_number, parse_json
+from .json_utils import is_number
+from .token_cache import TokenCache
 from .upstream import call_dropcowboy
 
 PURPOSE_SCOPES = MappingProxyType(
@@ -33,7 +37,8 @@ PURPOSE_SCOPES = MappingProxyType(
 
 TOKEN_TTL_SECONDS = 900
 
-JSON_WHITESPACE = " \t\n\r"
+# Mints allowed per user per minute (login mode: per access token). Cache hits do not count.
+MINT_PER_USER_PER_MINUTE = 30
 
 
 def scopes_for_purpose(purpose: Any) -> list[str] | None:
@@ -49,20 +54,55 @@ def scopes_for_purpose(purpose: Any) -> list[str] | None:
 
 
 def token_view(config: Config) -> Callable:
+    """Builds the POST /api/dropcowboy/token view.
+
+    Args:
+        config: The loaded server config.
+
+    Returns:
+        A Flask view that mints a Drop Cowboy embed token for one purpose.
+
+    Raises:
+        HttpError: From the view: 400 ``invalid_purpose``, or the upstream error.
+    """
+    # Login mode never caches: the token is minted for whoever holds an access token.
+    cache = TokenCache() if config.mode == "server" and config.token_cache else None
+
     def mint_token():
-        body = _json_body()
+        body = read_json_body()
         purpose = body.get("purpose") if isinstance(body, dict) else None
         scope = scopes_for_purpose(purpose)
         if scope is None:
             raise HttpError(400, "invalid_purpose", "purpose must be one of: " + ", ".join(PURPOSE_SCOPES))
 
+        user = g.get("user")
+        user_id = user.id if user else None
+        cache_key = f"{user_id}|{purpose}" if cache is not None else None
+        hit = cache.get(cache_key) if cache is not None else None
+        if hit is not None:
+            g.hooks.on_token_minted(
+                {
+                    "request_id": g.request_id,
+                    "user_id": user_id,
+                    "purpose": purpose,
+                    "cached": True,
+                    "expires_at": hit["expires_at"],
+                }
+            )
+            return _token_response(hit["token"], hit["expires_at"])
+
+        # Only a request that will reach Drop Cowboy uses up the per-user allowance. In login
+        # mode the caller is identified by their access token, hashed so it is never a map key.
+        access_token = g.get("access_token")
+        limit_key = hashlib.sha256(access_token.encode("utf-8")).hexdigest() if access_token else user_id
+        g.limit("mint-user", limit_key, MINT_PER_USER_PER_MINUTE)
+
         # Login mode sends no sub: Drop Cowboy knows the user from their
         # token, and a sub the browser chose would be a claim nobody checked.
-        access_token = g.get("access_token")
         if access_token:
             mint = {"site_id": config.site_id, "scope": scope, "ttl_seconds": TOKEN_TTL_SECONDS}
         else:
-            mint = {"site_id": config.site_id, "sub": g.user.id, "scope": scope, "ttl_seconds": TOKEN_TTL_SECONDS}
+            mint = {"site_id": config.site_id, "sub": user_id, "scope": scope, "ttl_seconds": TOKEN_TTL_SECONDS}
         result = call_dropcowboy(config, "POST", "/phone/public/embed/token", mint, access_token=access_token)
 
         data = result.get("data") if isinstance(result, dict) else None
@@ -73,28 +113,24 @@ def token_view(config: Config) -> Callable:
         if not isinstance(token, str) or token == "" or not is_number(expires_at):
             raise HttpError(502, "upstream_error", "Drop Cowboy sent a token response this server could not read.")
 
-        response = jsonify({"token": token, "expires_at": expires_at})
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        if cache is not None:
+            cache.set(cache_key, {"token": token, "expires_at": expires_at})
+        g.hooks.on_token_minted(
+            {
+                "request_id": g.request_id,
+                "user_id": user_id,
+                "purpose": purpose,
+                "cached": False,
+                "expires_at": expires_at,
+            }
+        )
+        return _token_response(token, expires_at)
 
     return mint_token
 
 
-def _json_body() -> Any:
-    """The request body, parsed the way Express's ``express.json()`` does.
-
-    Only ``application/json`` bodies are read, an empty body counts as ``{}``,
-    and only an object or an array is accepted at the top level.
-    """
-    if request.mimetype != "application/json":
-        return None
-    text = request.get_data().decode("utf-8", errors="replace")
-    stripped = text.strip(JSON_WHITESPACE)
-    if stripped == "":
-        return {}
-    if stripped[0] not in "{[":
-        raise HttpError(400, "invalid_json", "Request body is not valid JSON.")
-    try:
-        return parse_json(text)
-    except ValueError:
-        raise HttpError(400, "invalid_json", "Request body is not valid JSON.") from None
+def _token_response(token: str, expires_at: float):
+    """The documented body, marked ``no-store`` so no cache keeps a token."""
+    response = jsonify({"token": token, "expires_at": expires_at})
+    response.headers["Cache-Control"] = "no-store"
+    return response

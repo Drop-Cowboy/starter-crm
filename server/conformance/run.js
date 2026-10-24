@@ -3,7 +3,7 @@
 // mode, runs the suite against them, then shuts everything down.
 //
 //   node run.js                                                   # Node server
-//   SERVER_CMD="python -m starter_crm" SERVER_CWD=../python node run.js   # Python server
+//   SERVER_LANG=python SERVER_CMD="python -m starter_crm" SERVER_CWD=../python node run.js   # Python server
 
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -12,11 +12,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { baseEnv, freePort, spawnServer, stopServer, waitForHealth } from './lib/process.js';
+import { extension, identitySource, logSource, observerSource } from './lib/providers.js';
 import { MOCK_TOKEN, startMock } from './mock-upstream.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverCmd = process.env.SERVER_CMD || 'node src/index.js';
 const serverCwd = process.env.SERVER_CWD ? path.resolve(process.env.SERVER_CWD) : path.join(here, '..', 'node');
+// Which language the server under test is written in. It decides which custom
+// providers the harness writes (identity.js or identity.py).
+const serverLang = process.env.SERVER_LANG || (/python/.test(serverCmd) ? 'python' : 'node');
+const ext = extension(serverLang);
 const timeoutMs = 1500;
 
 const secrets = {
@@ -24,6 +29,7 @@ const secrets = {
     apiSecret: 'conformance-secret-' + crypto.randomUUID(),
     webhookSecret: 'conformance-webhook-' + crypto.randomUUID(),
     webhookSecret2: 'conformance-webhook-' + crypto.randomUUID(),
+    passcode: 'conformance-passcode-' + crypto.randomUUID(),
     // Login-mode access tokens, deliberately not JWT-shaped, so only "never
     // log it" keeps them out of the output. The mock accepts the first one.
     accessToken: 'conformance-access-' + crypto.randomUUID(),
@@ -31,6 +37,9 @@ const secrets = {
 };
 const siteId = crypto.randomUUID();
 const userId = crypto.randomUUID();
+const oidcAudience = 'starter-crm-conformance';
+const oidcPort = await freePort();
+const oidcIssuer = 'http://127.0.0.1:' + oidcPort;
 
 const mock = await startMock({
     slowDelayMs: timeoutMs * 3,
@@ -50,12 +59,17 @@ const modes = {
             // Two subscriptions, two secrets; the space checks trimming.
             DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret + ', ' + secrets.webhookSecret2,
             AUTH0_CLIENT_ID: 'conformance-public-client-id',
-            DC_CDN_VERSION: '1.2.3'
+            DC_CDN_VERSION: '1.2.3',
+            DC_RATE_LIMIT: 'off',
+            DC_TOKEN_CACHE: 'off'
         },
         files: {
             'vanilla/index.html': '<!doctype html><title>vanilla</title><!-- conformance-vanilla-index -->',
             'vanilla/app.js': 'console.log("conformance-vanilla-asset");\n',
             'react/dist/index.html': '<!doctype html><title>react</title><!-- conformance-react-index -->',
+            'react/dist/assets/index-Ab3dEf90.js': 'export const marker = "conformance-react-hashed-asset";\n' + '// padding so the file is worth compressing\n'.repeat(80),
+            'react/dist/assets/logo.js': 'export const marker = "conformance-react-unhashed-asset";\n',
+            'vanilla/big.js': 'console.log("conformance-vanilla-big");\n' + '// padding so the file is worth compressing\n'.repeat(80),
             'shared/dc-api.js': 'export const marker = "conformance-shared-module";\n',
             'shared/lib/format.mjs': 'export const marker = "conformance-shared-nested";\n',
             'shared/index.html': '<!doctype html><!-- conformance-shared-index -->',
@@ -69,16 +83,90 @@ const modes = {
             DROPCOWBOY_API_SECRET: secrets.apiSecret,
             DROPCOWBOY_SITE_ID: siteId,
             DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret,
-            STARTER_CRM_USER_ID: userId
+            STARTER_CRM_USER_ID: userId,
+            DC_RATE_LIMIT: 'off',
+            DC_TOKEN_CACHE: 'off'
         },
         files: {}
     },
     'mcp-session': {
-        env: { DC_AUTH_MODE: 'mcp-session' },
+        env: { DC_AUTH_MODE: 'mcp-session', DC_RATE_LIMIT: 'off' },
         files: {
             '.dropcowboy/.keep': '',
             'shared/dc-api.js': 'export const marker = "conformance-shared-module";\n'
         }
+    },
+    // A custom identity, the memory limiter behind one trusted proxy hop, an
+    // enforced CSP and a CORS allowlist: the headers, CORS and limit cases.
+    custom: {
+        env: {
+            DC_AUTH_MODE: 'server',
+            DROPCOWBOY_API_KEY: secrets.apiKey,
+            DROPCOWBOY_API_SECRET: secrets.apiSecret,
+            DROPCOWBOY_SITE_ID: siteId,
+            DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret,
+            DC_IDENTITY: './identity.' + ext,
+            DC_TRUST_PROXY: '1',
+            DC_RATE_LIMIT: 'memory',
+            DC_TOKEN_CACHE: 'off',
+            DC_CSP: 'enforce',
+            DC_CORS_ORIGINS: 'https://crm.example.com, https://other.example.org'
+        },
+        files: { ['identity.' + ext]: identitySource(serverLang) }
+    },
+    'limits-dev': {
+        env: { DC_AUTH_MODE: 'mcp-session', DC_TRUST_PROXY: '1', DC_RATE_LIMIT: 'memory' },
+        files: { '.dropcowboy/.keep': '' }
+    },
+    'limits-login': {
+        env: {
+            DC_AUTH_MODE: 'login',
+            DROPCOWBOY_SITE_ID: siteId,
+            DC_TRUST_PROXY: '1',
+            DC_RATE_LIMIT: 'memory',
+            DC_TOKEN_CACHE: 'off'
+        },
+        files: {}
+    },
+    // Production settings with the passcode identity, a custom log sink and a
+    // custom observer: sign-in, CSRF, cookies, redaction and the hooks.
+    passcode: {
+        env: {
+            DC_AUTH_MODE: 'server',
+            DC_ENV: 'production',
+            DROPCOWBOY_API_KEY: secrets.apiKey,
+            DROPCOWBOY_API_SECRET: secrets.apiSecret,
+            DROPCOWBOY_SITE_ID: siteId,
+            DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret,
+            DC_IDENTITY: 'passcode',
+            DC_PASSCODE: secrets.passcode,
+            DC_PUBLIC_URL: 'https://crm.example.com',
+            DC_CORS_ORIGINS: 'https://app.example.org',
+            DC_TRUST_PROXY: '1',
+            DC_RATE_LIMIT: 'memory',
+            DC_LOG: './log.' + ext,
+            DC_OBSERVER: './observer.' + ext
+        },
+        files: (root) => ({
+            ['log.' + ext]: logSource(serverLang, path.join(root, 'log.jsonl')),
+            ['observer.' + ext]: observerSource(serverLang, path.join(root, 'observer.jsonl'))
+        })
+    },
+    // The oidc identity against an issuer the oidc suite starts on a reserved port.
+    oidc: {
+        env: {
+            DC_AUTH_MODE: 'server',
+            DROPCOWBOY_API_KEY: secrets.apiKey,
+            DROPCOWBOY_API_SECRET: secrets.apiSecret,
+            DROPCOWBOY_SITE_ID: siteId,
+            DROPCOWBOY_WEBHOOK_SECRET: secrets.webhookSecret,
+            DC_IDENTITY: 'oidc',
+            DC_OIDC_ISSUER: oidcIssuer,
+            DC_OIDC_AUDIENCE: oidcAudience,
+            DC_RATE_LIMIT: 'off',
+            DC_TOKEN_CACHE: 'on'
+        },
+        files: {}
     }
 };
 
@@ -94,7 +182,8 @@ try {
             DROPCOWBOY_API_BASE: mock.url,
             DROPCOWBOY_TIMEOUT_MS: String(timeoutMs)
         };
-        writeFiles(root, { ...setup.files, '.env': toDotenv(env) });
+        const files = typeof setup.files === 'function' ? setup.files(root) : setup.files;
+        writeFiles(root, { ...files, '.env': toDotenv(env) });
 
         const port = await freePort();
         const proc = spawnServer({
@@ -109,9 +198,17 @@ try {
     console.log('Server under test: ' + serverCmd + '  (cwd ' + serverCwd + ')');
     await Promise.all(Object.keys(servers).map((mode, i) => waitForHealth(servers[mode].url, procs[i])));
 
-    const context = { mock: mock.url, servers, secrets, siteId, userId, serverCmd, serverCwd, timeoutMs };
+    const context = {
+        mock: mock.url, servers, secrets, siteId, userId, serverCmd, serverCwd, timeoutMs,
+        serverLang, oidc: { port: oidcPort, issuer: oidcIssuer, audience: oidcAudience }
+    };
     const suiteDir = path.join(here, 'suite');
-    const files = fs.readdirSync(suiteDir).filter((f) => f.endsWith('.test.js')).sort().map((f) => path.join(suiteDir, f));
+    // SUITE=<regex> runs only the matching files, e.g. SUITE=20- while working on one suite.
+    const only = process.env.SUITE ? new RegExp(process.env.SUITE) : null;
+    const files = fs.readdirSync(suiteDir)
+        .filter((f) => f.endsWith('.test.js') && (!only || only.test(f)))
+        .sort()
+        .map((f) => path.join(suiteDir, f));
     const suiteCode = await runSuite(files, context);
 
     const leaks = findLeaks(procs.map((p) => p.output()).join('\n'));
@@ -122,7 +219,13 @@ try {
 } catch (err) {
     console.error(err.message || err);
 } finally {
-    await Promise.all(procs.map(stopServer));
+    const stopped = await Promise.allSettled(procs.map(stopServer));
+    for (const result of stopped) {
+        if (result.status === 'rejected') {
+            console.error('\nFAIL: ' + (result.reason && result.reason.message ? result.reason.message : result.reason));
+            exitCode = 1;
+        }
+    }
     await mock.close();
     if (exitCode !== 0) {
         for (let i = 0; i < procs.length; i++) {
@@ -151,6 +254,7 @@ function findLeaks(output) {
     if (output.includes(secrets.apiSecret)) leaks.push('DROPCOWBOY_API_SECRET');
     if (output.includes(secrets.webhookSecret) || output.includes(secrets.webhookSecret2)) leaks.push('DROPCOWBOY_WEBHOOK_SECRET');
     if (output.includes(MOCK_TOKEN)) leaks.push('a site token');
+    if (output.includes(secrets.passcode)) leaks.push('DC_PASSCODE');
     if (output.includes(secrets.accessToken) || output.includes(secrets.expiredAccessToken)) leaks.push('a login access token');
     return leaks;
 }

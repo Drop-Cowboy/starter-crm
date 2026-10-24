@@ -9,7 +9,8 @@ test.use({ serverMode: 'login' });
 
 const SIGN_IN_ORIGIN = 'https://login.dropcowboy.com';
 
-test.describe('login mode', () => {
+// @fake-only: sign-in modes join the live run in their own phase (plan section 10.1).
+test.describe('login mode @fake-only', () => {
     test('signs in with PKCE and keeps the access token out of the browser\'s storage', async ({ page, app, dropcowboy, secrets }) => {
         // Stands in for the Drop Cowboy sign-in page: it approves at once and
         // sends the browser back with a one-time code.

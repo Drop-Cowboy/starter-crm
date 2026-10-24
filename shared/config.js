@@ -18,7 +18,7 @@ export const WIDGET_API_BASE = 'https://app-api-v2.dropcowboy.com';
 export const CDN_ORIGIN = 'https://webforms.dropcowboy.com';
 
 // The release this starter was written against. DC_CDN_VERSION overrides it.
-export const DEFAULT_CDN_VERSION = '3.33.6';
+export const DEFAULT_CDN_VERSION = '3.33.16';
 
 /**
  * @param {{ fetch?: typeof fetch }} [options]

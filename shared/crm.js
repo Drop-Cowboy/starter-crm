@@ -2,7 +2,9 @@ import { createActivityLog, fromDock } from './activity.js';
 import { cdnVersionFor, loadConfig, WIDGET_API_BASE } from './config.js';
 import { createContactsApi } from './contacts-api.js';
 import { createCdnLoader } from './dropcowboy-cdn.js';
+import { createIdentity } from './identity.js';
 import { createLogin } from './login.js';
+import { isSandboxOnly } from './sandbox.js';
 import { callServer } from './server-api.js';
 import { getBusinessNumber } from './settings.js';
 import { createTokenProvider, createTokenStore } from './token-provider.js';
@@ -37,8 +39,20 @@ export async function startCrm(options) {
         }
     }
 
+    // In server mode, ask who the user is before anything else: a signed-out
+    // passcode user gets a sign-in screen, not a page full of 401s.
+    const identity = createIdentity();
+    if (config.auth_mode === 'server') {
+        try {
+            await identity.session();
+        } catch (err) {
+            startupError = startupError || err;
+        }
+    }
+
     const provider = createTokenProvider({ config, login });
     const tokens = createTokenStore(provider);
+    let sandboxOnlyAsked = null;
     let cdn = null;
     try {
         cdn = createCdnLoader({ version: cdnVersionFor(config) });
@@ -49,6 +63,7 @@ export async function startCrm(options) {
     const crm = {
         config,
         login,
+        identity,
         tokens,
         cdn,
         contacts: createContactsApi({ tokens, apiBase: WIDGET_API_BASE }),
@@ -59,15 +74,34 @@ export async function startCrm(options) {
         readiness: function () {
             return readReadiness(config, provider);
         },
+        /**
+         * Resolves to true when readiness reports sandbox_only (the team can
+         * reach 555 test numbers only). Asked once per page load. It never
+         * rejects: while signed out, in mcp-session mode, or when readiness
+         * cannot be read, it is false and the pages behave as before.
+         */
+        sandboxOnly: function () {
+            if (crm.needsSignIn()) {
+                return Promise.resolve(false);
+            }
+            sandboxOnlyAsked = sandboxOnlyAsked || crm.readiness().then(isSandboxOnly, () => false);
+            return sandboxOnlyAsked;
+        },
+        webhookStatus: function () {
+            return callServer('/api/webhooks/status', { headers: provider.authHeaders() });
+        },
         startDock: function () {
             return startDock(crm);
         },
         startContacts: function () {
             return startContacts(crm);
         },
-        /** True in login mode until the user signs in. */
+        /** True in login mode until the user signs in, and in server mode while the identity says signed out. */
         needsSignIn: function () {
-            return !!login && !login.isSignedIn();
+            if (login) {
+                return !login.isSignedIn();
+            }
+            return config.auth_mode === 'server' && !identity.current().signedIn;
         }
     };
     return crm;

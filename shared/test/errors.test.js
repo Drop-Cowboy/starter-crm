@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AppError, errorFromResponse, explainError, explainPageError, readError } from '../errors.js';
+import { AppError, errorFromResponse, explainError, explainPageError, readError, signInCode } from '../errors.js';
 import { jsonResponse } from './helpers.js';
 
 describe('readError', () => {
@@ -118,5 +118,21 @@ describe('explainPageError', () => {
         const err = new AppError('consent_required', '', { reason: 'opted_out' });
         assert.deepEqual(explainPageError(err), explainError(err));
         assert.deepEqual(explainPageError({ code: 'business_number_missing' }), explainError({ code: 'business_number_missing' }));
+    });
+});
+
+describe('guidance for your own server\'s identity', () => {
+    it('explains each identity code in plain language, with no raw code as the title', () => {
+        for (const code of ['unauthenticated', 'invalid_passcode', 'invalid_token', 'identity_unavailable', 'rate_limited', 'csrf_rejected']) {
+            const g = explainError(new AppError(code, 'raw server text'));
+            assert.notEqual(g.title, code);
+            assert.doesNotMatch(g.message, /raw server text/);
+        }
+    });
+
+    it('picks login guidance only when login mode is on', () => {
+        assert.equal(signInCode({ login: null }), 'unauthenticated');
+        assert.equal(signInCode({ login: { isConfigured: () => true } }), 'login_required');
+        assert.equal(signInCode({ login: { isConfigured: () => false } }), 'login_not_configured');
     });
 });

@@ -19,3 +19,17 @@ regexTarget = "line"
 regexes = [
     '''"token": "eyJ[A-Za-z0-9_-]+\.\.\."''',
 ]
+
+[[allowlists]]
+description = "A boot problem code and its message, such as missing_doppler_token. The code only looks like a key name"
+regexTarget = "match"
+regexes = [
+    '''missing_[a-z_]*token['"],\s*['"]DC_SECRETS=''',
+]
+
+[[allowlists]]
+description = "The QStash development server's own credential, which decodes to {\"UserID\":\"defaultUser\",\"Password\":\"defaultPassword\"} and is the same on every machine"
+regexTarget = "match"
+regexes = [
+    '''QSTASH_TOKEN["']?:\s*["']eyJVc2VySUQiOiJkZWZhdWx0VXNlciIsIlBhc3N3b3JkIjoiZGVmYXVsdFBhc3N3b3JkIn0=["']''',
+]

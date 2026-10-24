@@ -1,22 +1,44 @@
+/**
+ * Account readiness: proxies Drop Cowboy's integration checklist so the Setup
+ * page works without the API key reaching the browser.
+ *
+ * Where it sits: browser -> `GET /api/dropcowboy/readiness` -> this file ->
+ * Drop Cowboy `GET /register/public/integration-readiness`.
+ *
+ * CONTRACT.md: "GET /api/dropcowboy/readiness".
+ * What a customer changes: nothing.
+ */
+
+import { jsonResponse } from './http.js';
 import { callDropCowboy } from './upstream.js';
 
-// Proxies the account readiness check with this server's API key, or in
-// login mode the signed-in user's token, so the /setup page works without the
-// key ever reaching the browser.
+/**
+ * Builds the readiness handler. It uses this server's API key, or in login
+ * mode the signed-in user's token.
+ *
+ * @param {object} config Validated config.
+ * @param {typeof fetch} fetchImpl The fetch to use.
+ * @returns {(ctx: object) => Promise<Response>} Async handler; responses are `no-store`.
+ * @throws {HttpError} Whatever callDropCowboy() throws.
+ */
 export function readinessRoute(config, fetchImpl) {
-    return async function getReadiness(req, res) {
+    return async function getReadiness(ctx) {
         const result = await callDropCowboy(config, fetchImpl, {
             method: 'GET',
             path: '/register/public/integration-readiness',
-            accessToken: req.accessToken
+            accessToken: ctx.accessToken
         });
-        res.set('Cache-Control', 'no-store');
-        res.json(pickReadiness(result.data));
+        return jsonResponse(200, pickReadiness(result.data), { 'cache-control': 'no-store' });
     };
 }
 
-// Keep only what the setup page shows. Pool ids, plan ids, phone number lists
-// and integration ids stay on the server.
+/**
+ * Keeps only what the setup page shows. Pool ids, plan ids, phone number
+ * lists and integration ids stay on the server.
+ *
+ * @param {unknown} data The `data` member of Drop Cowboy's answer.
+ * @returns {object} The allowlisted, type-checked readiness fields.
+ */
 export function pickReadiness(data) {
     const d = isObject(data) ? data : {};
     const byoc = isObject(d.byoc) ? d.byoc : {};
@@ -54,7 +76,11 @@ export function pickReadiness(data) {
         funds: { available: number(funds.available), funds_ok: funds.funds_ok === true },
         allotment,
         numbers: { count: number(numbers.count) },
-        embed_resolve_contact_consent: d.embed_resolve_contact_consent === true
+        embed_resolve_contact_consent: d.embed_resolve_contact_consent === true,
+        // True when the team has no carrier or no funds, so its session token
+        // reaches 555 test numbers only. Accounts that predate the sandbox
+        // omit it, which reads as false.
+        sandbox_only: d.sandbox_only === true
     };
 }
 

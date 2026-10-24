@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { verifySignature } from '../src/webhooks.js';
-import { WEBHOOK_SECRET, makeConfig, sign, startApp } from './helpers.js';
+import { defaultRuntime } from '../src/runtime.js';
+import { WEBHOOK_SECRET, makeConfig, sign, silentLog, startApp } from './helpers.js';
 
 const NOW = 1790000000;
 const BODY = '{"event_id":"d1f3a8e2-7c4b-4f9a-9d22-9c1e2f3a4b5c","event":"contact.rvm.status","data":{}}';
@@ -83,10 +84,11 @@ describe('POST /webhooks/dropcowboy', () => {
         expect(await res.json()).toEqual({ received: true });
     });
 
-    it('acknowledges a replayed event id without storing it twice', async () => {
-        const added = [];
-        const store = { hasSeen: (id) => added.some((e) => e.event_id === id), add: (e) => added.push(e) };
-        app = await startApp(makeConfig(), { store });
+    it('acknowledges a replayed event id without running its handlers twice', async () => {
+        const ran = [];
+        const config = makeConfig();
+        const runtime = defaultRuntime(config, silentLog, { handlers: { '*': async (event) => ran.push(event.event_id) } });
+        app = await startApp(config, { runtime });
 
         const eventId = 'b3e7a1c9-8d5f-4b2e-9a6c-1f4d7b3e8a52';
         const first = await deliver(BODY, { eventId });
@@ -95,7 +97,25 @@ describe('POST /webhooks/dropcowboy', () => {
         expect(await first.json()).toEqual({ received: true });
         expect(second.status).toBe(200);
         expect(await second.json()).toEqual({ received: true, duplicate: true });
-        expect(added).toHaveLength(1);
+        expect(ran).toEqual([eventId]);
+        expect((await runtime.store.counts()).processed).toBe(1);
+    });
+
+    it('answers 503 so Drop Cowboy retries when an inline handler fails', async () => {
+        const config = makeConfig();
+        const runtime = defaultRuntime(config, silentLog, { handlers: { '*': async () => { throw new Error('crm is down'); } } });
+        app = await startApp(config, { runtime });
+        const res = await deliver(BODY, { eventId: 'c4f8b2d0-9e6a-4c3f-8b7d-2a5e8c4f9b63' });
+        expect(res.status).toBe(503);
+    });
+
+    it('answers 503 when the event cannot be recorded', async () => {
+        const config = makeConfig();
+        const runtime = defaultRuntime(config, silentLog);
+        runtime.store.record = async () => { throw new Error('store is down'); };
+        app = await startApp(config, { runtime });
+        const res = await deliver(BODY, { eventId: 'd5a9c3e1-af7b-4d40-9c8e-3b6f9d5a0c74' });
+        expect(res.status).toBe(503);
     });
 
     it('verifies against every secret in a comma-separated DROPCOWBOY_WEBHOOK_SECRET', async () => {
@@ -124,5 +144,31 @@ describe('POST /webhooks/dropcowboy', () => {
         const res = await deliver(BODY);
         expect(res.status).toBe(503);
         expect((await res.json()).error.code).toBe('webhook_not_configured');
+    });
+
+    it('GET /api/webhooks/status counts events by state', async () => {
+        const config = makeConfig();
+        const runtime = defaultRuntime(config, silentLog);
+        app = await startApp(config, { runtime });
+        await deliver(BODY, { eventId: 'f7cbe5a3-c19d-4f62-9eaf-5d8b1f7c2e96' });
+        const failedId = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+        await runtime.store.record({ event_id: failedId, event: 'contact.msg.received', event_at: null, received_at: Date.now(), attempt: 1, data: {} });
+        await runtime.store.markFailed(failedId, 'crm is down');
+
+        const res = await fetch(app.url + '/api/webhooks/status');
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({
+            store: 'memory', webhooks: 'store', max_attempts: 8, received: 0, processed: 1, failed: 1, oldest_received_age_seconds: 0
+        });
+    });
+
+    it('GET /api/webhooks/status answers 503 when the store cannot be read', async () => {
+        const config = makeConfig();
+        const runtime = defaultRuntime(config, silentLog);
+        runtime.store.counts = async () => { throw new Error('store is down'); };
+        app = await startApp(config, { runtime });
+        const res = await fetch(app.url + '/api/webhooks/status');
+        expect(res.status).toBe(503);
+        expect((await res.json()).error.code).toBe('event_store_unavailable');
     });
 });

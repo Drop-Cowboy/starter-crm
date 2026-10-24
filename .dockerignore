@@ -1,0 +1,34 @@
+# Deny everything, then allow only what an image needs. A new top-level folder
+# is therefore never copied into an image by accident, and the Building Blocks
+# test cache (tests/e2e/.cdn-cache) cannot be, because it is not on the list.
+*
+
+!shared
+!vanilla
+!react
+!server/node
+!server/python
+!server/migrations
+!server/schemas
+
+# Inside the allowed folders, still leave out installs, build output, tests
+# and local state.
+**/node_modules
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/test-results
+**/coverage
+**/.env
+**/.env.*
+react/dist
+react/src/test
+shared/test
+**/*.test.js
+**/*.test.jsx
+server/node/test
+server/python/tests
+server/python/requirements-dev.txt

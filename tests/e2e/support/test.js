@@ -4,6 +4,9 @@ import { CDN_ORIGIN, findCdnDir, loadCdn } from './cdn.js';
 import { fakeJwt, startFakeDropCowboy, WIDGET_API_ORIGIN } from './fake-dropcowboy.js';
 import { findLeaks, readPage } from './leaks.js';
 import { startAppServer } from './app-server.js';
+import { startIssuer } from '../../../server/conformance/lib/jwks.js';
+import { fakeCrm, liveCrm } from './crm.js';
+import { deliverWebhook } from './webhook.js';
 
 // The fixtures every spec uses. Per worker: one fake Drop Cowboy account and
 // one starter server. Per test: a fresh account, a browser whose only way out
@@ -11,25 +14,96 @@ import { startAppServer } from './app-server.js';
 // a check afterwards that no token leaked anywhere in the browser.
 //
 //   ui          'vanilla' or 'react', set by the Playwright project.
-//   serverMode  'server' (default), 'login', 'login-not-configured' or
-//               'mcp-session'. Set it with test.use({ serverMode }).
+//   serverMode  'server' (default), 'passcode', 'oidc', 'login',
+//               'login-not-configured' or 'mcp-session'. Set it with
+//               test.use({ serverMode }).
+
+/**
+ * The headers that prove who is asking, for the server's identity, so the live
+ * delivery probe can read the protected event stream. `dev` needs none;
+ * `passcode` signs in the way the page does; `oidc` presents a token from the
+ * run's own throwaway issuer.
+ *
+ * @param {string} serverMode The identity under test.
+ * @param {string} serverUrl The starter server's local URL.
+ * @param {{ passcode: string }} secrets The run's secrets.
+ * @param {{ token: Function }|null} issuer The throwaway issuer, in oidc mode.
+ * @returns {Promise<Record<string, string>>} Headers to send, possibly none.
+ */
+async function identityHeaders(serverMode, serverUrl, secrets, issuer) {
+    if (serverMode === 'oidc' && issuer) {
+        return { Authorization: 'Bearer ' + issuer.token() };
+    }
+    if (serverMode === 'passcode') {
+        // The server checks Origin on a cookie-authenticated POST, as a browser would send it.
+        const response = await fetch(serverUrl + '/api/auth/passcode', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', origin: serverUrl },
+            body: JSON.stringify({ passcode: secrets.passcode })
+        });
+        const cookie = (response.headers.get('set-cookie') || '').split(';')[0];
+        return cookie ? { cookie } : {};
+    }
+    return {};
+}
 
 export const test = base.extend({
     ui: ['vanilla', { option: true, scope: 'worker' }],
     serverMode: ['server', { option: true, scope: 'worker' }],
+    // `fake` (default): intercepted Drop Cowboy. `live`: real API via npm run test:live.
+    target: [process.env.STARTER_CRM_LIVE === '1' ? 'live' : 'fake', { option: true, scope: 'worker' }],
 
-    secrets: [async ({}, use) => {
+    secrets: [async ({ target }, use) => {
+        if (target === 'live') {
+            await use({
+                apiKey: process.env.STARTER_CRM_LIVE_API_KEY,
+                apiSecret: process.env.STARTER_CRM_LIVE_API_SECRET,
+                webhookSecret: process.env.DROPCOWBOY_WEBHOOK_SECRET || 'live-webhook-placeholder-' + crypto.randomUUID(),
+                loginClientId: 'live-unused',
+                loginAccessToken: fakeJwt({ sub: 'auth0|live', aud: 'https://api-v2.dropcowboy.com' }),
+                siteId: process.env.STARTER_CRM_LIVE_SITE_ID,
+                passcode: 'live-passcode-' + crypto.randomUUID()
+            });
+            return;
+        }
         await use({
             apiKey: 'e2e-key-' + crypto.randomUUID(),
             apiSecret: 'e2e-secret-' + crypto.randomUUID(),
             webhookSecret: 'e2e-webhook-' + crypto.randomUUID(),
             loginClientId: 'e2e-public-client-' + crypto.randomUUID(),
             // What the sign-in page hands back in login mode; JWT-shaped like a real one.
-            loginAccessToken: fakeJwt({ sub: 'auth0|' + crypto.randomUUID(), aud: 'https://api-v2.dropcowboy.com' })
+            loginAccessToken: fakeJwt({ sub: 'auth0|' + crypto.randomUUID(), aud: 'https://api-v2.dropcowboy.com' }),
+            siteId: null,
+            passcode: 'e2e-passcode-' + crypto.randomUUID()
         });
     }, { scope: 'worker' }],
 
-    dropcowboy: [async ({ secrets }, use) => {
+    // oidc mode only: a throwaway issuer whose keys exist for this run alone.
+    issuer: [async ({ serverMode }, use) => {
+        if (serverMode !== 'oidc') {
+            await use(null);
+            return;
+        }
+        const { freePort } = await import('../../../server/conformance/lib/process.js');
+        const issuer = await startIssuer(await freePort(), 'starter-crm-e2e');
+        await use(issuer);
+        await issuer.close();
+    }, { scope: 'worker' }],
+
+    dropcowboy: [async ({ secrets, target }, use) => {
+        if (target === 'live') {
+            // Minimal stand-in so fake-only helpers do not crash when referenced.
+            await use({
+                url: process.env.DROPCOWBOY_API_BASE || 'https://api-v2.dropcowboy.com',
+                reset() {},
+                secrets: () => [],
+                unhandled: [],
+                callsTo() { return []; },
+                answerBrowser() { return { status: 404, body: '{}' }; },
+                async close() {}
+            });
+            return;
+        }
         const fake = await startFakeDropCowboy({
             apiKey: secrets.apiKey,
             apiSecret: secrets.apiSecret,
@@ -39,17 +113,74 @@ export const test = base.extend({
         await fake.close();
     }, { scope: 'worker' }],
 
-    appServer: [async ({ serverMode, ui, dropcowboy, secrets }, use) => {
-        const server = await startAppServer({ mode: serverMode, ui, fakeUrl: dropcowboy.url, secrets });
+    // Worker-scoped live session: pick a port, open the tunnel, register the
+    // webhook, then hand the signing secret to appServer before it boots.
+    livePrep: [async ({ target, secrets }, use) => {
+        if (target !== 'live') {
+            await use(null);
+            return;
+        }
+        const { freePort } = await import('../../../server/conformance/lib/process.js');
+        const { startLiveSession } = await import('./live.js');
+        const runId = process.env.STARTER_CRM_LIVE_RUN_ID || ('live-' + crypto.randomUUID().slice(0, 8));
+        const session = await startLiveSession({ runId, port: await freePort() });
+        if (session.webhookSecret) secrets.webhookSecret = session.webhookSecret;
+        await use(session);
+        await session.close();
+    }, { scope: 'worker', timeout: 120000 }],
+
+    live: [async ({ livePrep }, use) => {
+        await use(livePrep);
+    }, { scope: 'worker' }],
+
+    /**
+     * The account's contacts and pipeline, for either target (see support/crm.js).
+     * On live, whatever a test creates is deleted when it ends; set
+     * `crm.sweepRunContacts = true` in a test that adds contacts through the UI.
+     */
+    crm: async ({ target, dropcowboy, appServer, secrets, livePrep }, use) => {
+        if (target !== 'live') {
+            await use(fakeCrm({ dropcowboy, appServer, secrets }));
+            return;
+        }
+        const crm = liveCrm(livePrep);
+        await use(crm);
+        for (const contact of livePrep.created) {
+            await livePrep.api.deleteContact(contact.contact_id);
+        }
+        livePrep.created.length = 0;
+        if (crm.sweepRunContacts) await livePrep.api.deleteRunContacts({ runId: livePrep.runId });
+    },
+
+    appServer: [async ({ serverMode, ui, dropcowboy, secrets, target, livePrep, issuer }, use) => {
+        const fakeUrl = target === 'live'
+            ? (process.env.DROPCOWBOY_API_BASE || 'https://api-v2.dropcowboy.com')
+            : dropcowboy.url;
+        const server = await startAppServer({
+            mode: serverMode,
+            ui,
+            fakeUrl,
+            secrets,
+            live: target === 'live',
+            port: livePrep ? livePrep.port : null,
+            issuerUrl: issuer ? issuer.issuer : null,
+            audience: issuer ? issuer.audience : null
+        });
+        if (livePrep) {
+            const { waitForDelivery } = await import('./live.js');
+            await waitForDelivery(livePrep, server.url, { headers: await identityHeaders(serverMode, server.url, secrets, issuer) });
+        }
         await use(server);
         await server.stop();
+        if (target === 'live') return;
         const leaks = findLeaks({ 'The starter server\'s output': server.output() }, [
-            ...dropcowboy.secrets(), secrets.apiKey, secrets.apiSecret, secrets.webhookSecret, secrets.loginAccessToken
+            ...dropcowboy.secrets(), secrets.apiKey, secrets.apiSecret, secrets.webhookSecret, secrets.loginAccessToken,
+            secrets.passcode
         ]);
         if (leaks.length) {
             throw new Error(leaks.join('; ') + '. Servers must never log tokens or secrets.');
         }
-    }, { scope: 'worker' }],
+    }, { scope: 'worker', timeout: 240000 }],
 
     cdn: [async ({}, use) => {
         await use(loadCdn(findCdnDir()));
@@ -59,11 +190,29 @@ export const test = base.extend({
         await use(appServer.url);
     },
 
-    context: async ({ context, appServer, dropcowboy, cdn }, use) => {
+    context: async ({ context, appServer, dropcowboy, cdn, target, secrets }, use) => {
         dropcowboy.reset();
+        if (target !== 'live') {
+            // The fake's sandbox replies reach the server the way real ones
+            // do: as a signed contact.msg.received webhook.
+            dropcowboy.deliverInbound = (event) => deliverWebhook(appServer.url, secrets.webhookSecret, event);
+        }
         const blocked = [];
         const sockets = [];
         const local = new URL(appServer.url).origin;
+
+        if (target === 'live') {
+            // Live: allow the real CDN and app-api-v2; still block everything else.
+            await context.route((url) => {
+                const origin = new URL(url).origin;
+                return origin !== local && origin !== CDN_ORIGIN && origin !== WIDGET_API_ORIGIN;
+            }, async (route) => {
+                blocked.push(route.request().method() + ' ' + route.request().url());
+                return route.abort('blockedbyclient');
+            });
+            await use(Object.assign(context, { blocked, sockets }));
+            return;
+        }
 
         await context.route((url) => url.origin !== local, async (route) => {
             const request = route.request();
@@ -78,7 +227,7 @@ export const test = base.extend({
                 });
             }
             if (origin === WIDGET_API_ORIGIN) {
-                return route.fulfill(dropcowboy.answerBrowser({
+                return route.fulfill(await dropcowboy.answerBrowser({
                     method: request.method(),
                     url: request.url(),
                     headers: await request.allHeaders(),
@@ -135,13 +284,28 @@ export const test = base.extend({
 
     // Runs around every test: collects what the browser saw, then fails the
     // test if a token or secret turned up anywhere it should not.
-    leakCheck: [async ({ context, dropcowboy, secrets, cdn }, use, testInfo) => {
+    leakCheck: [async ({ context, dropcowboy, secrets, cdn, target }, use, testInfo) => {
         const seen = { urls: [], console: [] };
         context.on('request', (request) => seen.urls.push(request.url()));
         context.on('console', (message) => seen.console.push(message.type() + ': ' + message.text()));
         context.on('weberror', (error) => seen.console.push('pageerror: ' + error.error().message));
 
         await use(seen);
+
+        if (target === 'live') {
+            // Live runs talk to real hosts; still forbid secrets in the page.
+            const haystacks = { 'The console': seen.console.join('\n') };
+            for (const page of context.pages()) {
+                const snapshot = await readPage(page).catch(() => null);
+                if (!snapshot) continue;
+                haystacks['The page at ' + snapshot.url] = snapshot.dom;
+                haystacks['localStorage'] = JSON.stringify(snapshot.localStorage);
+                haystacks['sessionStorage'] = JSON.stringify(snapshot.sessionStorage);
+            }
+            const leaks = findLeaks(haystacks, [secrets.apiKey, secrets.apiSecret, secrets.webhookSecret, secrets.passcode]);
+            expect(leaks, 'API secrets must stay out of the page').toEqual([]);
+            return;
+        }
 
         const haystacks = {
             'A requested URL': seen.urls.join('\n'),
@@ -157,7 +321,8 @@ export const test = base.extend({
             haystacks['document.cookie'] = snapshot.cookies;
         }
         const leaks = findLeaks(haystacks, [
-            ...dropcowboy.secrets(), secrets.apiKey, secrets.apiSecret, secrets.webhookSecret, secrets.loginAccessToken
+            ...dropcowboy.secrets(), secrets.apiKey, secrets.apiSecret, secrets.webhookSecret, secrets.loginAccessToken,
+            secrets.passcode
         ]);
 
         if (dropcowboy.unhandled.length) {

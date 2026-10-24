@@ -1,4 +1,5 @@
 import { AppError } from './errors.js';
+import { isTestNumber } from './sandbox.js';
 import { getBusinessNumber } from './settings.js';
 
 // How each page hands a session to its Building Blocks. Framework-free: the
@@ -55,9 +56,13 @@ export async function callContact(crm, contact) {
     await dock.dial(dockTarget(contact));
 }
 
-/** Texting needs the business number the text is sent from. */
+/**
+ * Texting needs the business number the text is sent from, except to a 555
+ * test number: with no number given, Drop Cowboy sends a test text from a 555
+ * number of its own, so a new account can try texting before it owns one.
+ */
 export async function textContact(crm, contact) {
-    if (!getBusinessNumber()) {
+    if (!getBusinessNumber() && !isTestNumber(contact.main_phone)) {
         throw new AppError('business_number_missing', 'Set a business number first.');
     }
     const dock = await crm.startDock();

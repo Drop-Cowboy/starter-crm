@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from helpers import API_KEY, API_SECRET, json_answer, make_client, make_config
 
-from starter_crm.events import EventStore
 from starter_crm.readiness import pick_readiness
 
 ACCESS_TOKEN = "unit-test-access-token-0004"
@@ -56,7 +55,14 @@ def test_pick_readiness_keeps_only_the_fields_the_setup_page_shows():
         "allotment": {"sms": {"remaining": 90, "cap": 100}, "email": {"remaining": 5, "cap": 5}},
         "numbers": {"count": 2},
         "embed_resolve_contact_consent": True,
+        "sandbox_only": False,
     }
+
+
+def test_pick_readiness_passes_sandbox_only_through_and_only_an_explicit_true_counts():
+    assert pick_readiness({"sandbox_only": True})["sandbox_only"] is True
+    assert pick_readiness({"sandbox_only": "true"})["sandbox_only"] is False
+    assert pick_readiness({"sandbox_only": 1})["sandbox_only"] is False
 
 
 def test_pick_readiness_fills_safe_defaults_including_the_consent_setting():
@@ -69,6 +75,7 @@ def test_pick_readiness_fills_safe_defaults_including_the_consent_setting():
         "allotment": {},
         "numbers": {"count": 0},
         "embed_resolve_contact_consent": False,
+        "sandbox_only": False,
     }
 
 
@@ -108,34 +115,3 @@ def test_readiness_route_in_login_mode_needs_a_bearer(upstream):
     assert response.status_code == 401
     assert response.get_json()["error"]["code"] == "login_required"
     assert upstream.calls == []
-
-
-def test_event_store_bounds_events_and_seen_ids_and_replays_after_a_known_id():
-    store = EventStore(max_events=2, max_seen_ids=3)
-    for event_id in ["a", "b", "c", "d"]:
-        store.add({"event_id": event_id})
-
-    assert [e["event_id"] for e in store.since(None)] == ["c", "d"]
-    assert [e["event_id"] for e in store.since("c")] == ["d"]
-    assert [e["event_id"] for e in store.since("a")] == ["c", "d"]
-    assert store.has_seen("a") is False
-    assert store.has_seen("b") is True
-
-
-def test_event_store_refuses_an_id_it_has_already_seen():
-    store = EventStore()
-    assert store.add({"event_id": "a"}) is True
-    assert store.add({"event_id": "a"}) is False
-    assert len(store.since(None)) == 1
-
-
-def test_event_store_notifies_subscribers_until_they_unsubscribe():
-    store = EventStore()
-    store.add({"event_id": "before"})
-    got = []
-    backlog, unsubscribe = store.subscribe(lambda e: got.append(e["event_id"]))
-    store.add({"event_id": "a"})
-    unsubscribe()
-    store.add({"event_id": "b"})
-    assert [e["event_id"] for e in backlog] == ["before"]
-    assert got == ["a"]

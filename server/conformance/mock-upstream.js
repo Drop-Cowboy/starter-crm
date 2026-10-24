@@ -53,12 +53,12 @@ function problem(status, slug, detail) {
     };
 }
 
-function successFor(route) {
+function successFor(route, lifetimeMs = 900000) {
     if (route === 'token') {
         return {
             status: 200,
             body: {
-                data: { token: MOCK_TOKEN, expires_at: Date.now() + 900000, jti: crypto.randomUUID(), pool_id: '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b' },
+                data: { token: MOCK_TOKEN, expires_at: Date.now() + lifetimeMs, jti: crypto.randomUUID(), pool_id: '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b' },
                 meta: { request_id: crypto.randomUUID() }
             }
         };
@@ -79,8 +79,29 @@ const SCENARIOS = {
     server_error: () => problem(500, 'server-error', 'Stack trace with ' + CANARY),
     not_json: () => ({ status: 502, raw: '<html><body>Bad gateway ' + CANARY + '</body></html>', headers: { 'content-type': 'text/html' } }),
     bad_success: () => ({ status: 200, body: { data: { note: CANARY } } }),
-    slow: (route, delayMs) => ({ ...successFor(route), delayMs })
+    slow: (route, delayMs) => ({ ...successFor(route), delayMs }),
+    // Fails the first call to the route, then answers like success.
+    flaky: () => problem(503, 'service-unavailable', 'Try again.'),
+    // Throttles the first call with a short Retry-After, then answers like success.
+    flaky_429: () => ({ ...problem(429, 'too-many-requests', 'Slow down.'), headers: { 'retry-after': '1' } }),
+    // A token that expires inside the server's 60 second cache margin, so it must not be cached.
+    short_lived: (route) => successFor(route, 30000),
+    // A team with no carrier and no funds: it can still call and text 555 test numbers.
+    sandbox_only: () => ({
+        status: 200,
+        body: {
+            data: {
+                ...READINESS_DATA,
+                byoc: { connected: false, providers: [] },
+                funds: { available: 0, balance: 0, reserved: 0, funds_ok: false },
+                next_actions: ['connect_byoc', 'add_funds'],
+                sandbox_only: true
+            },
+            meta: { request_id: crypto.randomUUID() }
+        }
+    })
 };
+const FAILS_ONCE = new Set(['flaky', 'flaky_429']);
 
 const ROUTES = {
     'POST /phone/public/embed/token': 'token',
@@ -110,6 +131,7 @@ function authenticated(headers, { apiKey, apiSecret, accessTokens }) {
 export function startMock({ slowDelayMs = 5000, apiKey, apiSecret, accessTokens = [] } = {}) {
     let scenarios = { token: 'success', readiness: 'success' };
     let requests = [];
+    let failedOnce = new Set();
 
     const server = http.createServer(async (req, res) => {
         const raw = await readBody(req);
@@ -118,6 +140,7 @@ export function startMock({ slowDelayMs = 5000, apiKey, apiSecret, accessTokens 
         if (url.pathname === '/__mock/reset' && req.method === 'POST') {
             scenarios = { token: 'success', readiness: 'success' };
             requests = [];
+            failedOnce = new Set();
             return send(res, { status: 200, body: { ok: true } });
         }
         if (url.pathname === '/__mock/scenario' && req.method === 'POST') {
@@ -146,7 +169,12 @@ export function startMock({ slowDelayMs = 5000, apiKey, apiSecret, accessTokens 
         if (!authenticated(req.headers, { apiKey, apiSecret, accessTokens })) {
             return send(res, problem(401, 'unauthorized', 'Invalid or missing credentials'));
         }
-        const answer = SCENARIOS[scenarios[route]](route, slowDelayMs);
+        let scenario = scenarios[route];
+        if (FAILS_ONCE.has(scenario)) {
+            if (failedOnce.has(route)) scenario = 'success';
+            else failedOnce.add(route);
+        }
+        const answer = SCENARIOS[scenario](route, slowDelayMs);
         if (answer.delayMs) {
             await new Promise((resolve) => setTimeout(resolve, answer.delayMs));
         }

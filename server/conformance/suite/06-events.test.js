@@ -83,8 +83,10 @@ describe('GET /api/events', () => {
             headers: { 'last-event-id': first },
             until: (m) => m.some((x) => x.id === second)
         });
-        assert.equal(messages[0] && messages[0].id, second);
-        assert.ok(!messages.some((x) => x.id === first));
+        // A replay may reach back a few seconds before the cursor (CONTRACT.md "Event store"), so earlier
+        // events can appear; what must hold is that the cursor itself is not repeated and the next event is.
+        assert.ok(messages.some((x) => x.id === second), 'the event after the cursor must be replayed');
+        assert.ok(!messages.some((x) => x.id === first), 'the cursor event itself must not be replayed');
     });
 
     it('does not push rejected or duplicate deliveries', async () => {
@@ -100,7 +102,11 @@ describe('GET /api/events', () => {
             headers: { 'last-event-id': accepted },
             until: (m) => m.some((x) => x.id === marker)
         });
-        assert.deepEqual(messages.filter((x) => x.event === 'message').map((x) => x.id), [marker]);
+        const ids = messages.filter((x) => x.event === 'message').map((x) => x.id);
+        assert.deepEqual(ids.filter((id) => id === marker), [marker], 'the marker arrives exactly once');
+        assert.ok(!ids.includes(rejected), 'a rejected delivery is never pushed');
+        assert.ok(!ids.includes(accepted), 'the cursor event is not repeated, so the duplicate delivery added nothing');
+        assert.equal(new Set(ids).size, ids.length, 'no event id appears twice in one replay');
     });
 
     it('ends the replay with a named replayed event, before any live event', async () => {
@@ -134,6 +140,7 @@ describe('GET /api/events', () => {
             headers: { 'last-event-id': marker },
             until: (m) => m.some((x) => x.event === 'replayed')
         });
-        assert.deepEqual(messages.map((x) => x.event), ['replayed']);
+        assert.equal(messages.at(-1).event, 'replayed', 'the replay always ends with replayed');
+        assert.ok(!messages.some((x) => x.id === marker), 'the cursor event is not replayed');
     });
 });

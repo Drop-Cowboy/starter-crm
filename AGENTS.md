@@ -1,9 +1,44 @@
 # AGENTS.md
 
 Instructions for AI agents that change this starter, or copy it to build a CRM
-on Drop Cowboy Building Blocks. Read [`README.md`](README.md) first for what
-each page does, and [`server/CONTRACT.md`](server/CONTRACT.md) before touching
-a server route.
+on Drop Cowboy Building Blocks. Read [`docs/how-it-works.md`](docs/how-it-works.md)
+first for how the parts fit, what each page does and which token it uses, and
+[`server/CONTRACT.md`](server/CONTRACT.md) before touching a server route.
+
+The person you're working with may not write code. Explain each change in
+plain words, say which files you changed, and run `npm test` before you call
+it done. Never ask them to paste an API key, secret or passcode into the chat:
+`npm run setup` and the host's settings page are where those go. When
+something fails, check [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) first; its
+"Start here" section covers what people usually hit. Copy-paste recipes for
+common requests are in [`docs/build-with-ai.md`](docs/build-with-ai.md), and
+webhook setup is in [`docs/webhooks.md`](docs/webhooks.md).
+
+## Floors
+
+- **Node 24+** (`engines.node` in every package.json). Run
+  `source ~/.nvm/nvm.sh && nvm use 24` in cloud shells that default to 22.
+- **Python 3.11+** for the Flask server and its venv.
+
+## Comments (teaching code)
+
+This starter is teaching code for junior developers and AI-assisted builders.
+It carries **verbose comments**. Do not strip them to match sparse-comment
+defaults used elsewhere in Drop Cowboy.
+
+- Every source file opens with a header: what it does, where it sits in the
+  request flow, which CONTRACT section it implements, and what a customer
+  would change instead of editing the file.
+- Every non-obvious branch, env var and error path explains *why*.
+- Env vars document meaning, default, allowed values and failure mode where
+  they are read; the same text feeds `.env.example`.
+- Tests say what behavior each case protects and which contract rule it checks.
+- Every export has JSDoc (Node) or a Google-style docstring (Python): purpose,
+  parameters, return value, the errors it raises with their envelope codes, and
+  side effects. `eslint-plugin-jsdoc` and Ruff's `D` rules enforce this in
+  `npm test` (stages `lint:node` and `lint:python`).
+- Never delete a comment without replacing what it explained, and change the
+  comment in the same diff as the code it describes.
 
 ## Invariants
 
@@ -59,14 +94,32 @@ Break any of these and the starter is no longer a safe reference.
     front of it.
 11. **Copy, don't install.** Building Blocks load from the CDN at runtime.
     There is no npm package to install, and no Drop Cowboy source belongs in
-    this folder.
+    this folder. Never vendor, bundle or commit Building Blocks code here.
+12. **No `SAMPLE_*` names.** Only `STARTER_CRM_*`. A set `SAMPLE_USER_ID` or
+    `SAMPLE_CRM_ROOT` is a structured boot problem (`renamed_env`).
+13. **Providers never see a secret in a log, and never throw for a bad
+    credential.** Redaction runs before a log provider; an identity returns
+    `null` for a bad credential and throws only when the identity system is
+    down. A hook or observer must never change a response.
+14. **Await every async call** in server and serverless code. No
+    fire-and-forget, no `waitUntil`.
+15. **IDs and fiction.** Plain UUIDs only. Fictional data: contacts get 555
+    test numbers (+1 555 XXX XXXX, `shared/sandbox.js`), whose last four
+    digits pick what a call does, so dialing one never rings a phone; a
+    team's own business numbers stay in the 555-01xx range of a real area
+    code. Emails are `example.com` / `example.org`. No secrets, real customer data,
+    internal hostnames, AWS account ids/ARNs or internal service names.
 
 ## Where things live
 
 | To change | Edit |
 |---|---|
+| The CRM's name, logo or colours | `--crm-brand`, `--crm-brand-hover` and `--crm-brand-soft` under "Rebrand here" in `shared/crm.css` (light and dark); the name and logo in `vanilla/index.html` and `react/src/components/Layout.jsx`, plus the page titles that search for `Starter CRM` finds. See "Common changes" in `CUSTOMIZE.md`. |
 | Which scopes a purpose gets | `PURPOSE_SCOPES` in `server/node/src/token.js` and its Python twin in `server/python/starter_crm/token.py`, plus `server/CONTRACT.md` |
-| Your authentication | `requireUser()` in `server/node/src/auth.js`, `require_user()` in `server/python/starter_crm/auth.py` |
+| Who the user is | Choose `DC_IDENTITY` (`dev`, `passcode`, `oidc`) or write a provider; `requireUser()` in `server/node/src/auth.js` and `require_user()` in `server/python/starter_crm/auth.py` only call it. See `docs/providers/identity.md`. |
+| A replaceable piece (identity, secrets, rate limit, log, observer) | A provider file in `server/node/src/providers/<kind>/` and `server/python/starter_crm/providers/<kind>/`, registered in each `providers/index.js` or `__init__.py`. Document it in `docs/providers/<kind>.md` and check it with `npm run conformance:provider`. |
+| A secret manager provider (`doppler`, `infisical`, `vault`, `1password`) | `server/node/src/providers/secrets/` and `server/python/starter_crm/providers/secrets/`. The HTTP ones share `http.js` and `_http.py` (https-only, no redirects, 10 s timeout, no body in errors); keep that behaviour in a new one. Test it against a stand-in in `server/conformance/lib/secret-managers.js` and suite 19. |
+| Passcode sign-in and the auth header in the browser | `shared/identity.js`, `shared/server-api.js` (`setAuthHeaderProvider`), `shared/fetch-event-source.js`, `vanilla/sign-in.js`, `react/src/components/SignIn.jsx` |
 | Webhook verification | `server/node/src/webhooks.js`, `server/python/starter_crm/webhooks.py` |
 | How the browser gets and reuses tokens | `shared/token-provider.js` |
 | Contacts REST calls | `shared/contacts-api.js` |
@@ -76,6 +129,13 @@ Break any of these and the starter is no longer a safe reference.
 | Error messages | `GUIDANCE` and `CONSENT_REASONS` in `shared/errors.js` |
 | The setup checklist | `shared/setup.js` |
 | A page | `vanilla/pages/*.js` and `react/src/pages/*.jsx`. Change both. |
+| A feature of the customer's own (a screen with data) | A module: `npm run new:module -- <id>`, then `server/node/src/modules/<id>/`, `server/python/starter_crm/modules/<id>.py`, `server/schemas/<id>.json`, a page in both front-ends, and a branch for its id in `vanilla/pages/module.js` and `react/src/pages/ModulePage.jsx` (without it the placeholder shows). Never in `core`, `auth` or the webhook code. Deals is the example; see `CUSTOMIZE.md`, "Add a module". |
+| A custom provider, observer or handlers file | Under `server/node/src/` (or `server/python/starter_crm/`), with the setting pointing there (`DC_OBSERVER=./server/node/src/my-observer.js`). A file at the starter root is left out of the Docker images and cannot import packages installed in `server/node`. |
+| The AWS template and its scripts | `deploy/aws/ecs-express.yaml` (plain CloudFormation, no CDK), `scripts/deploy-aws.mjs`, `scripts/destroy-aws.mjs`, `scripts/lib/aws-stack.mjs`. The DynamoDB table in the template must equal `TABLE_SPEC` in `server/node/src/aws.js` and `aws_util.py`; `scripts/aws-template.test.mjs` checks it with cfn-lint. Nothing here may call AWS in a test: hand `deploy` and `destroy` a fake `exec`. |
+| The Vercel (Next.js) variant | `server/nextjs`: route files under `app/`, `lib/core.js` (boots the Node core once per instance, never starts a loop), `scripts/serve.mjs` (the long-running launcher the test suites use). The core stays in `server/node/src`; never copy it into the variant, and never leave work running after the response (a function is frozen when it ends). Webhook modes `vercel-queue` and `qstash` are in `server/node/src/providers/webhooks/` and the Python `qstash`; the platform guards are in `config.js` and `config.py`. |
+| The Netlify variant | `server/netlify`: `functions/api.mjs` (every path the CDN has no file for), `functions/webhook-jobs.mjs` (the Async Workloads workload), `functions/maintenance.mjs` (scheduled), `lib/core.js`, `scripts/build.mjs` (`dist/` and `_headers`), `scripts/serve.mjs` (the launcher the test suites use), and `netlify.toml` at the root. Same rules as the Next.js variant: the core stays in `server/node/src`, and nothing runs after the response (`waitUntil` is not used). The webhook mode is `netlify-async` in `server/node/src/providers/webhooks/`; the Python server refuses it. A file the server reads from outside `server/node` must be in `netlify.toml`'s `included_files`. |
+| Where modules keep data | `DC_DATA`; the providers in `server/node/src/providers/data/` and `server/python/starter_crm/providers/data/`, `docs/providers/data.md`, migration `server/migrations/*/002_module_data.sql`. |
+| What a module route accepts | A JSON schema in `server/schemas/`, read by both `validate.js` and `validate.py`. Add a case to `server/conformance/provider/schema-vectors.json` for a new keyword. |
 | A widget wrapper in React | `react/src/blocks/` |
 
 The two servers must stay interchangeable: a change to one is a change to
@@ -87,16 +147,16 @@ The two servers must stay interchangeable: a change to one is a change to
 Run what covers your change before you call it done:
 
 ```bash
-cd shared && npm test
-cd server/node && npm test && npm run lint
-cd server/python && pytest && ruff check .
-cd server/conformance && npm run test:node && npm run test:python
-cd react && npm test && npm run lint && npm run build
-cd tests/e2e && npm test        # Playwright, both front-ends, fake Drop Cowboy
-npm run test:leaks              # from the starter root: no secrets, no internal hosts
+source ~/.nvm/nvm.sh && nvm use 24   # if the shell is still on Node 22
+npm test                            # every stage, including leaks
+npm run test:leaks                  # leak checks alone
+npm run test:live                   # real API; needs STARTER_CRM_LIVE_* secrets
+npm run doctor                      # config + reachability + self-webhook
 ```
 
 `npm test` from the starter root runs every stage, including the leak checks.
+Per-package suites still work (`shared`, `server/node`, `server/python`,
+`server/conformance`, `react`, `tests/e2e`) when you are iterating.
 
 ## Common mistakes and their symptoms
 
@@ -107,7 +167,7 @@ npm run test:leaks              # from the starter root: no secrets, no internal
 | Passing the token as an attribute (`<dc-contact-card token="...">`) | The token shows in the DOM and devtools. The widget never signs in. |
 | Rendering a React element before its bundle defines it | React sets attributes instead of properties, so `tokenManager` never arrives. Wait for `useContactWidgets()` or `useSessionWidgets()`. |
 | `getToken` that returns the remembered token | Widgets keep sending an expired token, then fire `dc-session-expired`. Use `tokens.refresh()`, not `tokens.get()`. |
-| `dock.dial('+15125550142')` with no `contact_id` | The call is not logged on the contact, and "Use existing contact consent" cannot apply, so texts fail with `consent_required`. |
+| `dock.dial('+15550100001')` with no `contact_id` | The call is not logged on the contact, and "Use existing contact consent" cannot apply, so texts fail with `consent_required`. |
 | A JSON body parser in front of the webhook route | Every delivery fails with `invalid_signature`. |
 | Only one webhook secret configured | Deliveries for other event types fail with `invalid_signature`. Each webhook has its own secret; list them comma-separated. |
 | Loading from `/latest/` or dropping `integrity` | `cdn_unavailable`, or a bundle that can change under you. |

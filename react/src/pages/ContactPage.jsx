@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { changedFields } from '@shared/contacts-api.js';
 import { contactInitials, contactName, formatDate, formatPhone } from '@shared/format.js';
+import { contactSandboxHint } from '@shared/sandbox.js';
 import { callContact, focusContact, textContact } from '@shared/widgets.js';
 import { DcContactCard } from '../blocks/DcContactCard.jsx';
 import { ActivityList } from '../components/ActivityList.jsx';
@@ -12,7 +13,7 @@ import { ErrorNotice, InfoNotice, Loading } from '../components/Notice.jsx';
 import { DncBadge, WidgetTag } from '../components/Page.jsx';
 import { useToast } from '../components/Toasts.jsx';
 import { useCrm } from '../crm-context.js';
-import { useActivityItems, useContactWidgets, useModalDialog, usePageTitle } from '../hooks.js';
+import { useActivityItems, useContactWidgets, useModalDialog, usePageTitle, useSandboxOnly } from '../hooks.js';
 import { useAppPath, useLayout } from '../layout-context.js';
 
 const TABS = [
@@ -73,7 +74,7 @@ function TabPanel({ id, active, children }) {
     );
 }
 
-function Profile({ contact, onCall, onText, onConsent }) {
+function Profile({ contact, onCall, onText, onConsent, describedBy }) {
     const { context, toggleRail } = useLayout();
     const railShowing = context === 'rail';
     const hasSubline = contact.company || contact.main_phone || contact.email;
@@ -95,10 +96,10 @@ function Profile({ contact, onCall, onText, onConsent }) {
                 </p>
             </div>
             <div className="acts">
-                <button type="button" className="btn primary" disabled={!contact.main_phone} onClick={onCall}>
+                <button type="button" className="btn primary" disabled={!contact.main_phone} onClick={onCall} aria-describedby={describedBy}>
                     <Icon name="phone" />Call
                 </button>
-                <button type="button" className="btn" disabled={!contact.main_phone} onClick={onText}>
+                <button type="button" className="btn" disabled={!contact.main_phone} onClick={onText} aria-describedby={describedBy}>
                     <Icon name="message" />Text
                 </button>
                 <button type="button" className="btn" data-consent="" aria-label="Record consent" onClick={onConsent}>
@@ -221,6 +222,7 @@ function ContactDetail({ initial }) {
     const [tab, setTab] = useState('overview');
     const [consentOpen, setConsentOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
+    const sandboxOnly = useSandboxOnly();
     usePageTitle(contactName(contact));
 
     // The Dock follows the contact on screen, and lets go when the page closes.
@@ -251,6 +253,11 @@ function ContactDetail({ initial }) {
     const call = () => run(() => callContact(crm, contact));
     const text = () => run(() => textContact(crm, contact));
 
+    // In sandbox mode (readiness says sandbox_only) a sentence under the
+    // buttons says what Call and Text will really do: a 555 test number is
+    // answered by Drop Cowboy's test line, anything else is refused.
+    const sandboxHint = contactSandboxHint(sandboxOnly, contact.main_phone);
+
     function remove() {
         setConfirming(false);
         run(async () => {
@@ -278,7 +285,13 @@ function ContactDetail({ initial }) {
     return (
         <div className="contact-view">
             <Link className="back" to={appPath('/contacts')}><Icon name="chevron-left" />Contacts</Link>
-            <Profile contact={contact} onCall={call} onText={text} onConsent={() => setConsentOpen(true)} />
+            <Profile
+                contact={contact}
+                onCall={call}
+                onText={text}
+                onConsent={() => setConsentOpen(true)}
+                describedBy={sandboxHint ? 'sandbox-hint' : undefined}
+            />
             {searchParams.get('existing') === '1' && (
                 <InfoNotice title="Already in your contacts">
                     A contact with that phone or email already existed, so it was opened instead. Its empty fields were filled in.
@@ -286,6 +299,7 @@ function ContactDetail({ initial }) {
             )}
             <div className="problems">{problem && <ErrorNotice error={problem} />}</div>
             {!contact.main_phone && <p className="hint">Add a phone number to call or text.</p>}
+            {sandboxHint && <p className="hint" id="sandbox-hint">{sandboxHint}</p>}
             <Tabs active={tab} onChange={setTab} />
             <TabPanel id="overview" active={tab}>
                 <ContactCard contact={contact} version={version} onCall={call} onText={text} />

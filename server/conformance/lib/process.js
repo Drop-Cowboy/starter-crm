@@ -42,12 +42,40 @@ export function spawnServer({ command, cwd, env }) {
     return { child, exited, output: () => output };
 }
 
+/**
+ * Stops a server with SIGTERM and waits for every process it started to be gone.
+ *
+ * The shell that runs SERVER_CMD exits as soon as it is signalled, so waiting for it alone would
+ * say "stopped" while the server itself was still stuck in its shutdown. This waits for the whole
+ * process group, kills what is left after 5 seconds, and then reports it as a failure.
+ *
+ * @param {{ child: import('node:child_process').ChildProcess, exited: Promise<unknown> }} proc The server from spawnServer().
+ * @returns {Promise<void>}
+ * @throws {Error} When the server did not exit within 5 seconds of SIGTERM.
+ */
 export async function stopServer(proc) {
-    if (proc.child.exitCode !== null || proc.child.signalCode !== null) return;
-    signal(proc.child, 'SIGTERM');
-    const timer = setTimeout(() => signal(proc.child, 'SIGKILL'), 5000);
-    await proc.exited;
-    clearTimeout(timer);
+    if (proc.child.exitCode === null && proc.child.signalCode === null) {
+        signal(proc.child, 'SIGTERM');
+        await proc.exited;
+    }
+    const deadline = Date.now() + 5000;
+    while (groupAlive(proc.child) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (groupAlive(proc.child)) {
+        signal(proc.child, 'SIGKILL');
+        throw new Error('The server did not exit within 5 seconds of SIGTERM, so it was killed.\n' + proc.output());
+    }
+}
+
+function groupAlive(child) {
+    if (process.platform === 'win32') return false;
+    try {
+        process.kill(-child.pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 export async function waitForHealth(url, proc, timeoutMs = 30000) {

@@ -20,7 +20,9 @@ export function makeConfig(env = {}) {
         STARTER_CRM_ROOT: '/nonexistent-starter-root',
         ...env
     });
-    if (problems.length) throw new Error(problems.join('; '));
+    if (problems.length) {
+        throw new Error(problems.map((p) => (typeof p === 'string' ? p : p.message)).join('; '));
+    }
     return config;
 }
 

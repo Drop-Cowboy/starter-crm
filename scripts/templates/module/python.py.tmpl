@@ -1,0 +1,163 @@
+"""The __LABEL__ module, made by ``npm run new:module``.
+
+Where it sits: every ``.py`` file in ``starter_crm/modules/`` that defines ``MODULE`` is a module. The routes below are
+served under ``/api/modules/__MODULE__`` for a signed-in user, and the data lives in the ``__COLLECTION__`` collection of the
+data API (``DC_DATA``), so each __ITEM__ belongs to the user who made it and nobody else can read or change it.
+
+Routes (creates and updates are POST, deletes are DELETE):
+
+- ``GET    /api/modules/__MODULE__``      list this user's __ITEMS__, newest first. Filter: ``done=true|false|all``
+  (default all).
+- ``POST   /api/modules/__MODULE__``      create one: ``{title, notes?}``.
+- ``GET    /api/modules/__MODULE__/:id``  read one.
+- ``POST   /api/modules/__MODULE__/:id``  change some fields of one.
+- ``DELETE /api/modules/__MODULE__/:id``  delete one for good.
+
+The request shapes are in ``server/schemas/__MODULE__.json``, shared with the Node server, so both reject the same input
+with ``400 invalid_request`` and the name of the field. Change the fields there and in both servers together.
+
+To react to Drop Cowboy, pass ``on_event={...}`` to ``Module``; ``deals.py`` archives a deleted contact's deals.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from ..errors import HttpError
+from ..module_runtime import Module, ModuleContext, Router
+from ..validate import check_body, load_schemas
+
+# The data API collection this module keeps its documents in.
+COLLECTION = "__COLLECTION__"
+
+schemas = load_schemas("__MODULE__")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _missing() -> HttpError:
+    """The error for a __ITEM__ that is not there, or is not this user's: the two look the same on purpose.
+
+    Returns:
+        404 ``__ITEM_SNAKE___not_found``.
+    """
+    return HttpError(404, "__ITEM_SNAKE___not_found", "No __ITEM__ with that id.")
+
+
+def _item_id(params: dict[str, str]) -> str:
+    """Reads a __ITEM__ id from the path. Anything that is not a UUID cannot be one, so it never reaches the database.
+
+    Args:
+        params: The route parameters.
+
+    Returns:
+        The id.
+
+    Raises:
+        HttpError: 404 for something that is not a UUID.
+    """
+    if _UUID.fullmatch(params["id"]) is None:
+        raise _missing()
+    return params["id"]
+
+
+def _list(ctx: ModuleContext) -> dict:
+    """Lists this user's __ITEMS__, newest first.
+
+    Args:
+        ctx: The route context.
+
+    Returns:
+        ``{"__ITEMS_SNAKE__": [...]}``.
+    """
+    check_body(schemas["query"], ctx.query)
+    where: dict[str, Any] = {}
+    done = ctx.query.get("done")
+    if done and done != "all":
+        where["done"] = done == "true"
+    return {"__ITEMS_SNAKE__": ctx.data.collection(COLLECTION).list(where=where)}
+
+
+def _create(ctx: ModuleContext):
+    """Creates a __ITEM__ for this user.
+
+    Args:
+        ctx: The route context; ``body`` is already checked against the ``create`` schema.
+
+    Returns:
+        A 201 reply with ``{"__ITEM_SNAKE__": {...}}``.
+    """
+    record = ctx.data.collection(COLLECTION).insert(
+        {"title": ctx.body["title"], "notes": ctx.body.get("notes", ""), "done": False}
+    )
+    return ctx.reply(201, {"__ITEM_SNAKE__": record})
+
+
+def _read(ctx: ModuleContext) -> dict:
+    """Reads one of this user's __ITEMS__.
+
+    Args:
+        ctx: The route context.
+
+    Returns:
+        ``{"__ITEM_SNAKE__": {...}}``.
+
+    Raises:
+        HttpError: 404 ``__ITEM_SNAKE___not_found``.
+    """
+    record = ctx.data.collection(COLLECTION).get(_item_id(ctx.params))
+    if record is None:
+        raise _missing()
+    return {"__ITEM_SNAKE__": record}
+
+
+def _update(ctx: ModuleContext) -> dict:
+    """Changes some fields of one of this user's __ITEMS__.
+
+    Args:
+        ctx: The route context; ``body`` is already checked against the ``update`` schema.
+
+    Returns:
+        ``{"__ITEM_SNAKE__": {...}}``.
+
+    Raises:
+        HttpError: 404 ``__ITEM_SNAKE___not_found``.
+    """
+    record = ctx.data.collection(COLLECTION).update(_item_id(ctx.params), dict(ctx.body))
+    if record is None:
+        raise _missing()
+    return {"__ITEM_SNAKE__": record}
+
+
+def _delete(ctx: ModuleContext) -> dict:
+    """Deletes one of this user's __ITEMS__.
+
+    Args:
+        ctx: The route context.
+
+    Returns:
+        ``{"deleted": True, "id": ...}``.
+
+    Raises:
+        HttpError: 404 ``__ITEM_SNAKE___not_found``.
+    """
+    item_id = _item_id(ctx.params)
+    if not ctx.data.collection(COLLECTION).remove(item_id):
+        raise _missing()
+    return {"deleted": True, "id": item_id}
+
+
+def routes(router: Router) -> None:
+    """Declares the __LABEL__ routes.
+
+    Args:
+        router: The module's router.
+    """
+    router.get("/", _list)
+    router.post("/", _create, body=schemas["create"])
+    router.get("/:id", _read)
+    router.post("/:id", _update, body=schemas["update"])
+    router.delete("/:id", _delete)
+
+
+MODULE = Module(id="__MODULE__", routes=routes)

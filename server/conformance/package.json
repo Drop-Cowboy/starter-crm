@@ -6,11 +6,11 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24"
   },
   "scripts": {
     "test": "node run.js",
     "test:node": "node run.js",
-    "test:python": "SERVER_CMD=\"python -m starter_crm\" SERVER_CWD=../python node run.js"
+    "test:python": "SERVER_LANG=python SERVER_CMD=\"python -m starter_crm\" SERVER_CWD=../python node run.js"
   }
 }

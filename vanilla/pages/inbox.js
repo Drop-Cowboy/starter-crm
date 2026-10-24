@@ -33,9 +33,15 @@ export async function renderInbox(main, { crm, isCurrent }) {
     inbox.addEventListener('dc-error', (event) => show(problems, errorNotice(event.detail, crm)));
     inbox.addEventListener('dc-select-conversation', () => problems.replaceChildren());
     // Asked for only once the inbox can load: without a carrier a business
-    // number would not help.
+    // number would not help. In sandbox mode the team texts 555 numbers only,
+    // and Drop Cowboy sends those from a 555 number of its own, so it is not
+    // asked for then either.
     if (!getBusinessNumber()) {
-        show(missingNumber, errorNotice({ code: 'business_number_missing' }, crm));
+        crm.sandboxOnly().then((on) => {
+            if (!on && isCurrent()) {
+                show(missingNumber, errorNotice({ code: 'business_number_missing' }, crm));
+            }
+        });
     }
     status.replaceWith(inbox);
     return undefined;

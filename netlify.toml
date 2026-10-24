@@ -1,0 +1,57 @@
+# Netlify: the Starter CRM's front-ends on Netlify's CDN, and the server core in Netlify Functions.
+#
+# Where it sits: Netlify reads this file from the repository root on every deploy. The functions live in
+# server/netlify/functions and run the same core as the Node server (see server/netlify/README.md). HOSTING.md has the
+# setup, including the settings to add in the Netlify UI.
+#
+# The functions load the core from where it lives instead of bundling it (server/netlify/lib/core.js), so `nft` keeps
+# every file at its own path and `included_files` ships the core, its production dependencies, and the files it reads.
+#
+# What a customer changes: `included_files`, to add any file the server reads that lives outside server/node, such as
+# the files DC_WEBHOOK_HANDLERS names. A file missing from this list is absent from the deployed function, and the
+# server reports it at boot.
+
+[build]
+  # The first `npm ci` installs the root package.json's dependency, @netlify/async-workloads. The Async Workloads
+  # extension writes its router into .netlify/functions-internal at the root, and the router imports that package from
+  # there, so server/netlify's copy is out of its reach. Without it the router fails to load and every webhook answers 503.
+  # The root's other dependency is the empty stand-in for @netlify/sdk (server/netlify/README.md).
+  command = "npm ci --omit=dev && npm ci --omit=dev --prefix server/node && npm ci --prefix react && npm ci --omit=dev --prefix server/netlify && node server/netlify/scripts/build.mjs"
+  publish = "server/netlify/dist"
+
+[build.environment]
+  # The functions run on the Node version the build uses.
+  NODE_VERSION = "24"
+  # Build processes only; the functions never see it. Netlify's Async Workloads extension finds workload functions
+  # through `Dirent.path`, which Node 24 removed in favour of `parentPath`. Without this the extension finds no workload,
+  # silently injects no router, and every webhook answers 503. The module below puts `path` back as an alias. It is
+  # inline because a file path would resolve against each build process's own directory. Remove it once the extension
+  # reads `parentPath`: a build that works lists async-workloads-router under ".netlify/functions-internal".
+  NODE_OPTIONS = "--import=data:text/javascript,import{Dirent}from'node:fs';'path'in(Dirent.prototype)||Object.defineProperty(Dirent.prototype,'path',{configurable:true,get(){return(this.parentPath)},set(v){Object.defineProperty(this,'path',{value:v,writable:true,enumerable:true,configurable:true})}})"
+
+# The Deploy to Netlify button in HOSTING.md. It installs the Async Workloads extension, which runs the webhook
+# handlers, and asks for the settings below; each value is the label the form shows. Settings here reach the functions
+# only because the button saves them on the site: an `[build.environment]` value never does.
+[template]
+  required-extensions = ["async-workloads"]
+
+[template.environment]
+  DROPCOWBOY_SITE_ID = "Site id: any UUID, generated once and kept"
+  DROPCOWBOY_API_KEY = "Drop Cowboy API key, from Developers > API keys"
+  DROPCOWBOY_API_SECRET = "Drop Cowboy API secret"
+  DC_IDENTITY = "Sign-in: passcode"
+  DC_PASSCODE = "Passcode of 12 or more characters"
+
+[functions]
+  directory = "server/netlify/functions"
+  node_bundler = "nft"
+  included_files = [
+    "server/node/package.json",
+    "server/node/src/**",
+    "server/node/node_modules/**",
+    "server/migrations/**",
+    "server/schemas/**",
+    "vanilla/**",
+    "react/dist/**",
+    "shared/**"
+  ]

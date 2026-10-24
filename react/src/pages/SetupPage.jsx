@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { cdnVersionFor } from '@shared/config.js';
+import { signInCode } from '@shared/errors.js';
+import { sandboxNotice, sessionReadyNotice } from '@shared/sandbox.js';
 import { getBusinessNumber, setBusinessNumber } from '@shared/settings.js';
-import { isReady, itemStatus, setupChecklist } from '@shared/setup.js';
+import { isReady, itemStatus, setupChecklist, webhookItem } from '@shared/setup.js';
 import { ErrorNotice, InfoNotice, Loading } from '../components/Notice.jsx';
 import { Page } from '../components/Page.jsx';
 import { useToast } from '../components/Toasts.jsx';
@@ -40,8 +42,7 @@ function checklistSummary(crm, readiness, items) {
 /** Does this page have a session token? Resolves to { ok } or { error }. */
 function checkSession(crm) {
     if (crm.needsSignIn()) {
-        const code = crm.login.isConfigured() ? 'login_required' : 'login_not_configured';
-        return Promise.resolve({ error: { code } });
+        return Promise.resolve({ error: { code: signInCode(crm) } });
     }
     return crm.tokens.get('session').then(() => ({ ok: true }), (error) => ({ error }));
 }
@@ -52,6 +53,14 @@ function checkAccount(crm) {
         return Promise.resolve({ readiness: null, error: null });
     }
     return crm.readiness().then((readiness) => ({ readiness, error: null }), (error) => ({ readiness: null, error }));
+}
+
+/** The webhook handling status, or null when the server cannot be asked. */
+function checkWebhooks(crm) {
+    if (crm.needsSignIn()) {
+        return Promise.resolve({ status: null });
+    }
+    return crm.webhookStatus().then((status) => ({ status }), () => ({ status: null }));
 }
 
 function ChecklistItem({ item }) {
@@ -74,9 +83,11 @@ function Checklist({ account, businessNumber }) {
         return <Loading label="Checking your account…" />;
     }
     const items = setupChecklist(account.readiness, { siteId: crm.config.site_id, businessNumber });
+    const sandbox = sandboxNotice(account.readiness);
     return (
         <>
             {account.error && <ErrorNotice error={account.error} />}
+            {sandbox && <InfoNotice title={sandbox.title}>{sandbox.message}</InfoNotice>}
             <p>{checklistSummary(crm, account.readiness, items)}</p>
             <ol className="checklist">
                 {items.map((item) => <ChecklistItem item={item} key={item.id} />)}
@@ -112,12 +123,14 @@ export function SetupPage() {
     const { hash } = useLocation();
     const [session, setSession] = useState(null);
     const [account, setAccount] = useState(null);
+    const [webhooks, setWebhooks] = useState(null);
     const [businessNumber, setBusinessNumberState] = useState(getBusinessNumber);
 
     useEffect(() => {
         let current = true;
         checkSession(crm).then((result) => current && setSession(result));
         checkAccount(crm).then((result) => current && setAccount(result));
+        checkWebhooks(crm).then((result) => current && setWebhooks(result));
         return () => {
             current = false;
         };
@@ -136,11 +149,9 @@ export function SetupPage() {
     if (session && session.error) {
         sessionStatus = <ErrorNotice error={session.error} />;
     } else if (session) {
-        sessionStatus = (
-            <InfoNotice title="Session token: ready">
-                Calling, texting and the inbox in the Dock are available.
-            </InfoNotice>
-        );
+        // Worded for sandbox mode once readiness says the token reaches 555 test numbers only.
+        const ready = sessionReadyNotice(account && account.readiness);
+        sessionStatus = <InfoNotice title={ready.title}>{ready.message}</InfoNotice>;
     }
 
     return (
@@ -154,6 +165,12 @@ export function SetupPage() {
                 <h2 id="checklist-title">Account checklist</h2>
                 <div aria-live="polite">
                     <Checklist account={account} businessNumber={businessNumber} />
+                </div>
+            </section>
+            <section className="card" aria-labelledby="webhooks-title">
+                <h2 id="webhooks-title">Webhooks</h2>
+                <div aria-live="polite">
+                    {webhooks ? <ol className="checklist"><ChecklistItem item={webhookItem(webhooks.status)} /></ol> : <Loading label="Checking webhook handling…" />}
                 </div>
             </section>
             <section className="card" aria-labelledby="business-number-title">

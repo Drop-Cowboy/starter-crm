@@ -1,6 +1,8 @@
 import { cdnVersionFor } from '/shared/config.js';
+import { signInCode } from '/shared/errors.js';
+import { isSandboxOnly, sandboxNotice, sessionReadyNotice } from '/shared/sandbox.js';
 import { getBusinessNumber, setBusinessNumber } from '/shared/settings.js';
-import { isReady, itemStatus, setupChecklist } from '/shared/setup.js';
+import { isReady, itemStatus, setupChecklist, webhookItem } from '/shared/setup.js';
 import { toast } from '../activity.js';
 import { h, show } from '../dom.js';
 import { errorNotice, infoNotice, loading } from '../notice.js';
@@ -53,22 +55,36 @@ function checklistSummary(crm, readiness, items) {
     return 'Your account could not be checked right now, so nothing is marked.';
 }
 
+/** The session status notice, and whether the session token was minted. */
 async function sessionStatus(crm) {
     if (crm.needsSignIn()) {
-        return errorNotice({ code: crm.login.isConfigured() ? 'login_required' : 'login_not_configured' }, crm);
+        return { ok: false, notice: errorNotice({ code: signInCode(crm) }, crm) };
     }
     try {
         await crm.tokens.get('session');
-        return infoNotice('Session token: ready', 'Calling, texting and the inbox in the Dock are available.');
+        return { ok: true, notice: readyNotice(null) };
     } catch (err) {
-        return errorNotice(err, crm);
+        return { ok: false, notice: errorNotice(err, crm) };
     }
+}
+
+/** "Session token: ready", worded for sandbox mode once readiness says so. */
+function readyNotice(readiness) {
+    const notice = sessionReadyNotice(readiness);
+    return infoNotice(notice.title, notice.message);
+}
+
+/** The sandbox notice above the checklist, or null when readiness does not report sandbox_only. */
+function sandboxCard(readiness) {
+    const notice = sandboxNotice(readiness);
+    return notice ? infoNotice(notice.title, notice.message) : null;
 }
 
 /** Setup: how this app authenticates, what the account still needs, and local settings. */
 export async function renderSetup(main, { crm, isCurrent }) {
     const status = h('div', null, loading('Checking the session…'));
     const checklist = h('div', { 'aria-live': 'polite' }, loading('Checking your account…'));
+    const webhooks = h('div', { 'aria-live': 'polite' }, loading('Checking webhook handling…'));
     let cdnVersion = '(invalid)';
     try {
         cdnVersion = cdnVersionFor(crm.config);
@@ -86,6 +102,10 @@ export async function renderSetup(main, { crm, isCurrent }) {
             h('h2', { id: 'checklist-title' }, 'Account checklist'),
             checklist
         ),
+        h('section', { class: 'card', 'aria-labelledby': 'webhooks-title' },
+            h('h2', { id: 'webhooks-title' }, 'Webhooks'),
+            webhooks
+        ),
         h('section', { class: 'card', 'aria-labelledby': 'business-number-title' },
             h('h2', { id: 'business-number-title' }, 'Business number'),
             h('p', { class: 'hint' }, 'Stored in this browser only. It must be a number on your account that is registered for texting.'),
@@ -101,7 +121,8 @@ export async function renderSetup(main, { crm, isCurrent }) {
         )
     ));
 
-    show(status, await sessionStatus(crm));
+    const session = await sessionStatus(crm);
+    show(status, session.notice);
     if (!isCurrent()) {
         return undefined;
     }
@@ -115,12 +136,34 @@ export async function renderSetup(main, { crm, isCurrent }) {
             readinessError = err;
         }
     }
+    if (!isCurrent()) {
+        return undefined;
+    }
+    // A sandbox-only token works, but for 555 test numbers only: say so
+    // instead of promising real calls.
+    if (session.ok && isSandboxOnly(readiness)) {
+        show(status, readyNotice(readiness));
+    }
     const items = setupChecklist(readiness, { siteId: crm.config.site_id, businessNumber: getBusinessNumber() });
     show(checklist,
         readinessError ? errorNotice(readinessError, crm) : null,
+        sandboxCard(readiness),
         h('p', null, checklistSummary(crm, readiness, items)),
         h('ol', { class: 'checklist' }, items.map(checklistItem))
     );
+
+    let webhookStatus = null;
+    if (!crm.needsSignIn()) {
+        try {
+            webhookStatus = await crm.webhookStatus();
+        } catch {
+            // The item says the server could not be asked.
+        }
+    }
+    if (!isCurrent()) {
+        return undefined;
+    }
+    show(webhooks, h('ol', { class: 'checklist' }, checklistItem(webhookItem(webhookStatus))));
 
     if (location.hash) {
         const target = document.getElementById(location.hash.slice(1));

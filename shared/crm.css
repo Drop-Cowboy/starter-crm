@@ -2,8 +2,9 @@
    below; text meets WCAG AA contrast in the light and the dark theme. */
 
 /* ── Rebrand here ──────────────────────────────────────────────────────
-   Change --crm-brand, --crm-brand-hover and --crm-brand-soft (and their dark
-   values further down) to make the CRM yours. The values are literal, not
+   Change --crm-brand, --crm-brand-hover and --crm-brand-soft (and the dark
+   --crm-brand-soft further down; the other dark brand colours follow
+   --crm-brand) to make the CRM yours. The values are literal, not
    var(--dc-*), so the app looks right before a Drop Cowboy bundle loads. */
 :root {
     --crm-brand: #2563eb;
@@ -913,6 +914,35 @@ dialog::backdrop { background: rgba(15, 23, 42, 0.42); }
 .dlg p { color: var(--crm-muted); margin-top: 8px; font-size: 13px; }
 .dlg .actions { margin-top: 18px; justify-content: flex-end; }
 
+/* ── Deals: the worked example of a module ────────────────────────────── */
+
+.deal-filters { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.deal-filters select { width: auto; }
+.deal-filters label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.deal-list { display: flex; flex-direction: column; gap: 10px; max-width: 880px; }
+.deal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    background: var(--crm-bg);
+    border: 1px solid var(--crm-border);
+    border-radius: var(--crm-radius);
+    padding: 12px 16px;
+}
+.deal.archived { background: var(--crm-surface); }
+.deal.archived h2 { color: var(--crm-muted); }
+.deal-main { min-width: 0; flex: 1 1 260px; }
+.deal-main h2 { font-size: 15px; overflow-wrap: anywhere; }
+.deal-meta { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--crm-muted); margin-top: 2px; }
+.deal-meta a { display: inline-flex; align-items: center; gap: 4px; }
+.deal-note { margin-top: 4px; }
+.deal-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.deal-acts select { width: auto; }
+.deal-detail { max-width: 880px; }
+.deal-detail:empty { display: none; }
+
 /* ── Toasts: bottom-left, because the Dock owns the bottom-right ──────── */
 
 .toasts {
@@ -996,3 +1026,27 @@ dialog::backdrop { background: rgba(15, 23, 42, 0.42); }
     .toasts { bottom: calc(64px + 12px); }
     .app[data-layout="embedded"] ~ .toasts { bottom: 16px; }
 }
+
+/* Sign-in screen (server mode, passcode identity) */
+.app[data-layout="signin"] { display: block; }
+.signin {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: var(--crm-surface);
+}
+.signin-card {
+    width: min(100%, 420px);
+    padding: 28px;
+    background: var(--crm-bg);
+    color: var(--crm-text);
+    border: 1px solid var(--crm-border);
+    border-radius: var(--crm-radius-lg);
+    box-shadow: var(--crm-shadow);
+}
+.signin-card h1 { margin: 0 0 8px; font-size: 20px; }
+.signin-card p { margin: 0 0 16px; color: var(--crm-muted); font-size: 14px; line-height: 1.5; }
+.signin-form { display: grid; gap: 14px; }
+.signin-form .btn { justify-self: start; }
+.signin-status { margin: 0; min-height: 1.4em; color: var(--crm-danger-fg); font-size: 13px; }

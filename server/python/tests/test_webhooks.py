@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 
-from helpers import WEBHOOK_SECRET, make_client, make_config, sign
+from helpers import WEBHOOK_SECRET, make_client, make_config, sign, silent_logger
 
-from starter_crm.events import EventStore
+from starter_crm.runtime import default_runtime
 from starter_crm.webhooks import verify_signature
 
 NOW = 1790000000
@@ -86,9 +86,11 @@ def test_verifies_the_raw_bytes_not_re_serialised_json():
     assert response.get_json() == {"received": True}
 
 
-def test_acknowledges_a_replayed_event_id_without_storing_it_twice():
-    store = EventStore()
-    client = make_client(make_config(), store=store)
+def test_acknowledges_a_replayed_event_id_without_running_its_handlers_twice():
+    ran = []
+    config = make_config()
+    runtime = default_runtime(config, silent_logger(), {"*": lambda event, ctx: ran.append(ctx.event_id)})
+    client = make_client(config, runtime)
     event_id = "b3e7a1c9-8d5f-4b2e-9a6c-1f4d7b3e8a52"
     first = deliver(client, BODY, event_id=event_id)
     second = deliver(client, BODY, event_id=event_id)
@@ -96,16 +98,56 @@ def test_acknowledges_a_replayed_event_id_without_storing_it_twice():
     assert first.get_json() == {"received": True}
     assert second.status_code == 200
     assert second.get_json() == {"received": True, "duplicate": True}
-    assert len(store.since(None)) == 1
+    assert ran == [event_id]
+    assert runtime.store.counts()["processed"] == 1
 
 
 def test_stores_the_event_in_the_contract_shape():
-    store = EventStore()
-    deliver(make_client(make_config(), store=store), BODY)
-    [event] = store.since(None)
+    config = make_config()
+    runtime = default_runtime(config, silent_logger())
+    deliver(make_client(config, runtime), BODY)
+    [event] = runtime.store.since()
     assert event["event_id"] == "d1f3a8e2-7c4b-4f9a-9d22-9c1e2f3a4b5c"
     assert (event["event"], event["event_at"], event["attempt"], event["data"]) == ("contact.rvm.status", None, 1, {})
     assert isinstance(event["received_at"], int)
+
+
+def test_answers_503_so_drop_cowboy_retries_when_an_inline_handler_fails():
+    def boom(event, ctx):
+        raise RuntimeError("crm is down")
+
+    config = make_config()
+    runtime = default_runtime(config, silent_logger(), {"*": boom})
+    response = deliver(make_client(config, runtime), BODY, event_id="c4f8b2d0-9e6a-4c3f-8b7d-2a5e8c4f9b63")
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "handler_failed"
+
+
+def test_answers_503_when_the_event_cannot_be_recorded():
+    config = make_config()
+    runtime = default_runtime(config, silent_logger())
+
+    def broken(event, visible_at=None):
+        raise RuntimeError("store is down")
+
+    runtime.store.record = broken
+    response = deliver(make_client(config, runtime), BODY, event_id="d5a9c3e1-af7b-4d40-9c8e-3b6f9d5a0c74")
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "event_store_unavailable"
+
+
+def test_answers_503_when_the_event_cannot_be_queued():
+    config = make_config()
+    runtime = default_runtime(config, silent_logger())
+
+    def broken(event_id):
+        raise RuntimeError("queue is down")
+
+    runtime.dispatcher.dispatch = broken
+    response = deliver(make_client(config, runtime), BODY, event_id="e6bad4f2-b08c-4e51-8d9f-4c7a0e6b1d85")
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "webhook_not_queued"
+    assert runtime.store.counts()["received"] == 1
 
 
 def test_verifies_against_every_secret_in_a_comma_separated_webhook_secret():
@@ -139,3 +181,46 @@ def test_answers_503_when_no_webhook_secret_is_configured():
     response = deliver(make_client(make_config(DROPCOWBOY_WEBHOOK_SECRET="")), BODY)
     assert response.status_code == 503
     assert response.get_json()["error"]["code"] == "webhook_not_configured"
+
+
+def test_status_counts_events_by_state():
+    config = make_config()
+    runtime = default_runtime(config, silent_logger())
+    client = make_client(config, runtime)
+    deliver(client, BODY, event_id="f7cbe5a3-c19d-4f62-9eaf-5d8b1f7c2e96")
+    failed_id = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+    event = {
+        "event_id": failed_id,
+        "event": "contact.msg.received",
+        "event_at": None,
+        "received_at": 1,
+        "attempt": 1,
+        "data": {},
+    }
+    runtime.store.record(event)
+    runtime.store.mark_failed(failed_id, "crm is down")
+
+    response = client.get("/api/webhooks/status")
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "store": "memory",
+        "webhooks": "store",
+        "max_attempts": 8,
+        "received": 0,
+        "processed": 1,
+        "failed": 1,
+        "oldest_received_age_seconds": 0,
+    }
+
+
+def test_status_answers_503_when_the_store_cannot_be_read():
+    config = make_config()
+    runtime = default_runtime(config, silent_logger())
+
+    def broken():
+        raise RuntimeError("store is down")
+
+    runtime.store.counts = broken
+    response = make_client(config, runtime).get("/api/webhooks/status")
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "event_store_unavailable"

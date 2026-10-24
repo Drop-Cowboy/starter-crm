@@ -1,6 +1,7 @@
 # Starter CRM server (Node)
 
-A small Express server for the Drop Cowboy Starter CRM. It does the two jobs a
+A small server for the Drop Cowboy Starter CRM, written as web-standard
+handlers (`Request` in, `Response` out) with Express as a thin adapter. It does the two jobs a
 browser must never do itself:
 
 - **mints short-lived site tokens**, with your API key so the key stays on the
@@ -12,7 +13,8 @@ It implements [`../CONTRACT.md`](../CONTRACT.md) and passes the suite in
 [`../conformance/`](../conformance/). The front-ends only use the routes in that
 contract, so they work the same on this server or the Python one.
 
-Dependencies are `express` and `dotenv`. Calls to Drop Cowboy use Node's
+Dependencies are `express`, `dotenv` and `jose` (loaded only when you choose
+`DC_IDENTITY=oidc`). Calls to Drop Cowboy use Node's
 built-in `fetch`, and signatures use `node:crypto`, so you can see every HTTP
 request the starter makes.
 
@@ -46,7 +48,12 @@ root (two folders up); variables already in your environment win.
 | `DC_AUTH_MODE` | | `server` (default), `mcp-session` or `login` |
 | `DROPCOWBOY_API_KEY`, `DROPCOWBOY_API_SECRET` | `server` | Needs the `numbers:write` scope to mint, and `balance:read` for the setup check |
 | `DROPCOWBOY_SITE_ID` | `login`, `server` | One UUID per deployed app; keep it stable. It partitions the embed inbox. |
-| `STARTER_CRM_USER_ID` | `server` | A UUID standing in for your signed-in user until you replace `requireUser()` |
+| `DC_IDENTITY` | `server` | `dev` (default, local only), `passcode`, `oidc` or a path to your own provider |
+| `DC_PASSCODE` | `passcode` | 12 or more characters; a secret |
+| `DC_OIDC_ISSUER`, `DC_OIDC_AUDIENCE`, `DC_OIDC_JWKS_URL` | `oidc` | The issuer must equal the token's `iss`; the key set URL is optional |
+| `STARTER_CRM_USER_ID` | `dev` | A UUID for the dev user; optional with `passcode` |
+| `DC_SECRETS`, `DC_RATE_LIMIT`, `DC_LOG`, `DC_OBSERVER` | | Provider choices; see [`docs/providers/`](../../docs/providers/identity.md) |
+| `DC_CSP`, `DC_CORS_ORIGINS`, `DC_TOKEN_CACHE`, `DC_LOG_FORMAT`, `DC_LOG_REQUESTS`, `DC_SECRETS_DIR`, `DC_SECRETS_REFRESH_SECONDS` | | Security headers, CORS, token reuse, logging and secret files; see `.env.example` |
 | `DROPCOWBOY_WEBHOOK_SECRET` | webhooks | The webhook's signing secret. Comma-separate several: each webhook has its own. |
 | `DROPCOWBOY_API_BASE` | | Default `https://api-v2.dropcowboy.com` |
 | `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE` | `login` | Public values, safe in the browser |
@@ -151,7 +158,9 @@ locally. The signature covers the raw request body, which is why
 | `src/index.js` | Loads `.env`, checks config, starts listening |
 | `src/app.js` | `createApp(config)`: wires the routes. Tests use it without listening. |
 | `src/config.js` | Reads and validates the environment |
-| `src/auth.js` | `requireUser()`, the placeholder for **your** login, and the login-mode bearer check |
+| `src/auth.js` | `requireUser()`, which asks the chosen identity who is calling, and the login-mode bearer check |
+| `src/providers/` | The built-in identity (`dev`, `passcode`, `oidc`), secrets (`env`, `file`), rate-limit (`memory`, `off`) and log (`console`) providers |
+| `src/security.js`, `src/request-context.js`, `src/hooks.js` | Response headers, CORS and CSRF; request ids; observer hooks |
 | `src/token.js` | The purpose-to-scope allowlist and the mint call |
 | `src/readiness.js` | The setup check, trimmed to what the page shows |
 | `src/dev-session.js` | The loopback-only MCP session hand-off |
@@ -174,13 +183,14 @@ No test talks to the real Drop Cowboy API or needs credentials.
 
 ## Going to production
 
-- **Replace `requireUser()`** in `src/auth.js` with your real session check. Until
-  you do, anyone who can reach the server gets tokens.
+- **Choose a real identity.** `DC_ENV=production` refuses `DC_IDENTITY=dev`.
+  Use `passcode`, `oidc` or your own provider (`../../CUSTOMIZE.md`).
 - **Restrict the readiness route** to your admins; it describes your account.
 - **Run behind HTTPS.** Browsers only allow the microphone on HTTPS pages (and
   `localhost`).
 - **Keep secrets in a secret manager**, not a `.env` file on the server.
-- **Rate-limit the token route** per user.
+- **Check the rate limit fits.** The token route and sign-in are limited per
+  process; use a shared limiter on several instances (`docs/providers/ratelimit.md`).
 - **Store webhook events durably** (your database or a queue) before you answer,
   and de-duplicate on `event_id` there. The in-memory store here forgets
   everything on restart and is per process.

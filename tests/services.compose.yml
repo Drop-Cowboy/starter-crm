@@ -1,0 +1,119 @@
+# Real services the tests can run against instead of a stub. Not the app: the
+# app's own compose file is ../compose.yaml.
+#
+#   docker compose -f tests/services.compose.yml up -d --wait
+#
+# OpenBao is the open-source Vault fork and speaks the same KV v2 and AppRole
+# HTTP API, so it proves the `vault` secrets provider against the real wire
+# format and not only against the conformance stub. It runs in dev mode: in
+# memory, unsealed, and the root token below is a throwaway for this test
+# container. It is bound to loopback so nothing else on the network can reach
+# it. Never use dev mode, or this token, for anything that holds real secrets.
+#
+# The conformance suite (server/conformance/suite/20-openbao.test.js) skips with
+# a notice when nothing answers on this port, so a developer without Docker
+# still gets a green run.
+#
+# Postgres and Valkey (the BSD-licensed Redis fork) prove the durable event
+# store, the fan-out and the BullMQ queue against the real servers. Both are
+# bound to loopback with throwaway credentials, and Valkey runs the way the
+# docs tell you to run Redis for queues: AOF on and noeviction. The Phase 4
+# suites (server/conformance/suite/2x-*.test.js, server/*/test) skip with a
+# notice when nothing answers, exactly like the OpenBao suite.
+#
+# Phase 6 adds the AWS stand-ins and a cluster-mode Valkey. dynamodb-local proves the
+# `dynamodb` store and data provider against the real DynamoDB wire format, ElasticMQ
+# proves the `sqs` webhook mode (including its dead-letter queue), and a one-node
+# cluster-mode Valkey proves the Redis providers work through a cluster client, as
+# ElastiCache Serverless needs. All three use throwaway credentials, bind to loopback,
+# and the suites that need them skip with a notice when nothing answers.
+#
+# Phase 7 adds the QStash development server, the real Upstash QStash that runs on a laptop: it
+# signs each delivery the way the hosted service does, so the `qstash` webhook mode and its
+# signature check are proved against the real thing. It posts to the host through
+# host.docker.internal, so a test server it must reach listens on all interfaces.
+services:
+    openbao:
+        image: openbao/openbao:2.1.0@sha256:7de07aa6df3937d44c96c2d65c188b2d4a70546f2a764ad4510301305af6a223
+        command: ["server", "-dev", "-dev-root-token-id=starter-crm-dev-root", "-dev-listen-address=0.0.0.0:8200"]
+        cap_add:
+            - IPC_LOCK
+        ports:
+            - "127.0.0.1:8200:8200"
+        healthcheck:
+            test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+            interval: 2s
+            timeout: 3s
+            retries: 15
+
+    postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        environment:
+            POSTGRES_USER: starter
+            POSTGRES_PASSWORD: starter-crm-dev
+            POSTGRES_DB: starter_crm
+        ports:
+            - "127.0.0.1:55432:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U starter -d starter_crm"]
+            interval: 2s
+            timeout: 3s
+            retries: 15
+    valkey:
+        image: valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+        command: ["valkey-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+        ports:
+            - "127.0.0.1:56379:6379"
+        healthcheck:
+            test: ["CMD", "valkey-cli", "ping"]
+            interval: 2s
+            timeout: 3s
+            retries: 15
+
+    dynamodb:
+        image: amazon/dynamodb-local@sha256:ff89bd48ff32cd8d9be5fee8873b65b8854dc408f1afe881be6eb00247bc0dab
+        command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb", "-port", "8000"]
+        ports:
+            - "127.0.0.1:58000:8000"
+        # The image has no shell tools; a TCP connect from the host side is checked by the suites themselves.
+
+    elasticmq:
+        image: softwaremill/elasticmq-native@sha256:e4580ab9ad1bd5cd37b4ba04911bc5ccc8cd2d9ab4de56ece65acee71c24e05c
+        ports:
+            - "127.0.0.1:59324:9324"
+
+    # One node that runs in cluster mode and owns every slot, announced on the address a
+    # client on the host reaches it by. A real cluster has three or more nodes; what the suites
+    # need from this one is the cluster protocol: MOVED redirects and the single-slot rule for
+    # scripts and transactions, which is what breaks code written for a plain Redis.
+    valkey-cluster:
+        image: valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+        command:
+            - valkey-server
+            - --port
+            - "55380"
+            - --cluster-enabled
+            - "yes"
+            - --cluster-announce-ip
+            - 127.0.0.1
+            - --cluster-announce-port
+            - "55380"
+            - --appendonly
+            - "yes"
+            - --maxmemory-policy
+            - noeviction
+        ports:
+            - "127.0.0.1:55380:55380"
+        healthcheck:
+            test: ["CMD-SHELL", "valkey-cli -p 55380 cluster info | grep -q cluster_state:ok || (valkey-cli -p 55380 cluster addslotsrange 0 16383 >/dev/null 2>&1; exit 1)"]
+            interval: 2s
+            timeout: 3s
+            retries: 15
+
+    qstash:
+        image: public.ecr.aws/upstash/qstash@sha256:a49ffd1cb967800e2b5e2bfab7375282c6c269ef5bf8d9f0f8e115560b1b5597
+        command: ["qstash", "dev"]
+        ports:
+            - "127.0.0.1:58080:8080"
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
