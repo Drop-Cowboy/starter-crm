@@ -22,7 +22,7 @@
 # the digest; to change it by hand, run `docker buildx imagetools inspect
 # node:24-slim` and copy the top-level Digest.
 
-FROM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS react-build
+FROM node:26-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS react-build
 WORKDIR /app
 # The React app imports ../shared, so both folders are copied. Dependencies
 # first, so a source change does not reinstall them.
@@ -33,12 +33,12 @@ RUN npm ci --no-audit --no-fund
 COPY react ./
 RUN npm run build
 
-FROM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS server-deps
+FROM node:26-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS server-deps
 WORKDIR /app/server/node
 COPY server/node/package.json server/node/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-FROM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
+FROM node:26-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS runtime
 ENV NODE_ENV=production \
     DC_ENV=production \
     HOST=0.0.0.0 \
