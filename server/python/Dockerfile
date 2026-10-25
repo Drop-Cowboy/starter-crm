@@ -23,7 +23,7 @@
 # Base images are pinned by digest. Dependabot bumps the digests. To change one by hand, run `docker buildx
 # imagetools inspect python:3.13-slim` and copy the top-level Digest.
 
-FROM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS react-build
+FROM node:26-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS react-build
 WORKDIR /app
 COPY shared ./shared
 COPY react/package.json react/package-lock.json ./react/
