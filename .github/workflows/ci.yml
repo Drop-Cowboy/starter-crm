@@ -27,7 +27,8 @@ jobs:
   checks:
     name: Unit and contract tests (Python ${{ matrix.python }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Each server's conformance run takes about eight minutes against the real services.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
