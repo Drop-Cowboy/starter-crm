@@ -40,6 +40,9 @@
     "vitest": "5.0.3"
   },
   "overrides": {
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "@vercel/cli-config": {
+      "zod": "4.6.7"
+    }
   }
 }

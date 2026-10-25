@@ -56,10 +56,34 @@ jobs:
       - name: Install cfn-lint for the AWS template tests
         run: pip install cfn-lint==1.57.2
 
-      # Postgres and Valkey for the durable event store, fan-out and queue suites. Without them
-      # those suites skip, so a green run would say nothing about them.
-      - name: Start Postgres, Valkey and OpenBao
-        run: docker compose -f tests/services.compose.yml up -d --wait
+      # The real services from tests/services.compose.yml. Without them their suites skip, so a
+      # green run would say nothing about them. QStash is left out of compose because its image is
+      # on ECR Public, whose anonymous pull allowance is shared by every job on a runner's IP and
+      # runs out. The same release ships as a binary, which the next step runs instead.
+      - name: Start Postgres, Valkey, OpenBao and the AWS stand-ins
+        run: docker compose -f tests/services.compose.yml up -d --wait openbao postgres valkey dynamodb elasticmq valkey-cluster
+
+      # Same release as the image pinned in tests/services.compose.yml; update the two together.
+      # The suites tell QStash to deliver to host.docker.internal, which a container resolves to
+      # the host, so the runner is given the same name.
+      - name: Start the QStash development server
+        env:
+          QSTASH_VERSION: 2.40.12
+          QSTASH_SHA256: b48277d761541074769074cab39c70b89f6d8123ce20763501adccc4240d6106
+        run: |
+          archive="qstash-server_${QSTASH_VERSION}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 3 -O "https://artifacts.upstash.com/qstash/versions/${QSTASH_VERSION}/${archive}"
+          echo "${QSTASH_SHA256}  ${archive}" | sha256sum -c -
+          tar xzf "$archive" qstash
+          echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+          nohup ./qstash dev -port 58080 > qstash.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:58080/ && exit 0
+            sleep 1
+          done
+          cat qstash.log
+          exit 1
 
       - name: Run the tests
         run: npm run test:fast

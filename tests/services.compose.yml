@@ -110,6 +110,7 @@ services:
             timeout: 3s
             retries: 15
 
+    # 2.40.12. CI runs the same release as a binary (see .github/workflows/ci.yml), so update both.
     qstash:
         image: public.ecr.aws/upstash/qstash@sha256:a49ffd1cb967800e2b5e2bfab7375282c6c269ef5bf8d9f0f8e115560b1b5597
         command: ["qstash", "dev"]
