@@ -58,6 +58,8 @@ export async function create(ctx) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const db = new DatabaseSync(file);
     db.exec('PRAGMA journal_mode = WAL');
+    // The same file and the same trade-off as the event store; see providers/store/sqlite.js.
+    db.exec('PRAGMA synchronous = NORMAL');
     db.exec('PRAGMA busy_timeout = 5000');
     migrateSqlite(db);
 

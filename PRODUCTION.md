@@ -95,6 +95,13 @@ The starter is safe to run on your own machine. Before real users touch it:
     `dynamodb`, so one backup covers both, and with `DC_STORE=redis` they are in the
     `DC_DATA` database, which needs its own. Unlike events they never expire.
     Migrations run at boot under a lock; check them with `npm run migrate:status`.
+    SQLite runs in WAL mode with `synchronous = NORMAL`, so a write does not wait
+    for the disk to flush. A crash or restart of the server or its container
+    loses nothing. A power cut or operating-system crash can lose the most
+    recent writes, those since SQLite last flushed its log, including webhooks
+    already answered with `200`, which Drop Cowboy then will not send again.
+    If that matters to you, use Postgres. Waiting for a flush on every write
+    froze the Node server for seconds at a time on a slow cloud disk.
 13. **On Vercel, check the function settings.** [`HOSTING.md`](HOSTING.md) has the
     steps. In production: turn Deployment Protection off for the domain (it
     blocks the webhook and the queue), set `CRON_SECRET`, use a pooled Postgres

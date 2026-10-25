@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import * as dynamodb from '../src/providers/store/dynamodb.js';
 import * as memory from '../src/providers/store/memory.js';
 import * as postgres from '../src/providers/store/postgres.js';
@@ -261,3 +262,18 @@ for (const [label, provider, available, providerEnv] of stores.filter(([name]) =
         });
     });
 }
+
+describe('event store: sqlite (connection settings)', () => {
+    it('opens the file in WAL mode with synchronous NORMAL, so a commit does not wait for the disk', async () => {
+        const exec = vi.spyOn(DatabaseSync.prototype, 'exec');
+        try {
+            const store = await build({ provider: sqlite, site: freshSite() });
+            const ran = exec.mock.calls.map(([sql]) => sql);
+            expect(ran).toContain('PRAGMA journal_mode = WAL');
+            expect(ran).toContain('PRAGMA synchronous = NORMAL');
+            await store.close();
+        } finally {
+            exec.mockRestore();
+        }
+    });
+});

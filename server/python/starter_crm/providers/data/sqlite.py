@@ -83,6 +83,8 @@ class _Rows:
             db = sqlite3.connect(self._file, isolation_level=None, check_same_thread=False, timeout=5)
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA journal_mode = WAL")
+            # The same file and the same trade-off as the event store; see providers/store/sqlite.py.
+            db.execute("PRAGMA synchronous = NORMAL")
             db.execute("PRAGMA busy_timeout = 5000")
             migrate_sqlite(db)
             self._db = db

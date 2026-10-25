@@ -285,6 +285,21 @@ def test_keeps_two_sites_on_one_store_apart(kind, opened, tmp_path):
     assert ids(a.since()) == [event_id]
 
 
+def test_sqlite_opens_in_wal_mode_with_synchronous_normal_so_a_commit_does_not_wait_for_the_disk(opened, monkeypatch):
+    ran: list[str] = []
+    connect = sqlite.sqlite3.connect
+
+    def traced(*args, **kwargs):
+        db = connect(*args, **kwargs)
+        db.set_trace_callback(ran.append)
+        return db
+
+    monkeypatch.setattr(sqlite.sqlite3, "connect", traced)
+    opened("sqlite")
+    assert "PRAGMA journal_mode = WAL" in ran
+    assert "PRAGMA synchronous = NORMAL" in ran
+
+
 @pytest.mark.parametrize("kind", DURABLE)
 def test_keeps_its_events_across_a_restart(kind, opened, tmp_path):
     site, file = fresh_site(), tmp_path / "restart.sqlite"

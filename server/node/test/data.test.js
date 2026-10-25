@@ -4,7 +4,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import * as dynamodb from '../src/providers/data/dynamodb.js';
 import * as memory from '../src/providers/data/memory.js';
 import * as postgres from '../src/providers/data/postgres.js';
@@ -204,6 +205,21 @@ for (const [label, provider, available] of providers.filter(([name]) => name !==
         });
     });
 }
+
+describe('data provider: sqlite (connection settings)', () => {
+    it('opens the file in WAL mode with synchronous NORMAL, like the event store', async () => {
+        const exec = vi.spyOn(DatabaseSync.prototype, 'exec');
+        try {
+            const data = await build({ provider: sqlite, site: freshSite() });
+            const ran = exec.mock.calls.map(([sql]) => sql);
+            expect(ran).toContain('PRAGMA journal_mode = WAL');
+            expect(ran).toContain('PRAGMA synchronous = NORMAL');
+            await data.close();
+        } finally {
+            exec.mockRestore();
+        }
+    });
+});
 
 describe.skipIf(!HAVE_DYNAMODB)('data provider: dynamodb (table layout)', () => {
     it('keeps owners and sites apart even when their ids contain the key separator', async () => {

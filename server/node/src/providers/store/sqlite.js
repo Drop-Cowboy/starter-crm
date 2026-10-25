@@ -76,6 +76,10 @@ export async function create(ctx) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const db = new DatabaseSync(file);
     db.exec('PRAGMA journal_mode = WAL');
+    // Every call here blocks the event loop, and FULL flushes the disk on every commit, which on a slow disk
+    // stalled every request for seconds. NORMAL in WAL mode cannot corrupt the file and loses nothing when the
+    // process dies; a power loss or OS crash can lose the most recent commits (PRODUCTION.md, item 12).
+    db.exec('PRAGMA synchronous = NORMAL');
     db.exec('PRAGMA busy_timeout = 5000');
     migrateSqlite(db);
 

@@ -179,6 +179,11 @@ published as a package; a "version" here is a state of this repository.
 
 ### Changed
 
+- SQLite now opens with `synchronous = NORMAL` in both servers, for events and
+  module data. A write no longer waits for the disk to flush, which froze the
+  Node server for seconds at a time on a slow cloud disk. A crash of the server
+  loses nothing; a power cut or operating-system crash can lose the most recent
+  writes (`PRODUCTION.md`, item 12).
 - Building Blocks 3.33.16 is the default `DC_CDN_VERSION`. Calls placed
   from the Dock now play the other party's audio; before, they connected in
   silence. A call starts ringing within about a second of clicking Call; in

@@ -112,6 +112,10 @@ class SqliteStore:
             db = sqlite3.connect(self._file, isolation_level=None, check_same_thread=False, timeout=5)
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA journal_mode = WAL")
+            # Matches the Node server, which shares this file: FULL flushes the disk on every commit. NORMAL in
+            # WAL mode cannot corrupt the file and loses nothing when the process dies; a power loss or OS crash
+            # can lose the most recent commits (PRODUCTION.md, item 12).
+            db.execute("PRAGMA synchronous = NORMAL")
             db.execute("PRAGMA busy_timeout = 5000")
             migrate_sqlite(db)
             self._db = db

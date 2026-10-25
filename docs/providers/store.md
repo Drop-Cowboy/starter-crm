@@ -10,7 +10,7 @@ Set `DC_STORE`.
 | Value | Keeps events | Use it when |
 |---|---|---|
 | `memory` (default) | In this process, until it restarts. | Building and trying the app. Everything else behaves as on a durable store. |
-| `sqlite` | In one file, `DC_SQLITE_PATH` (default `data/starter-crm.sqlite`). | One instance on a VPS or Compose host. It is single-machine: two instances on two machines cannot share a file. |
+| `sqlite` | In one file, `DC_SQLITE_PATH` (default `data/starter-crm.sqlite`). | One instance on a VPS or Compose host. It is single-machine: two instances on two machines cannot share a file. A power cut can lose the most recent writes (`PRODUCTION.md`, item 12). |
 | `postgres` | In a table every instance shares (`DC_DATABASE_URL`, or `DATABASE_URL`). | More than one instance, or you already run Postgres. |
 | `redis` | In Redis or Valkey (`DC_REDIS_URL`). | Your only datastore is Redis (Upstash, for example). Turn on persistence and use `maxmemory-policy noeviction`. |
 | `dynamodb` | In one DynamoDB table every instance shares (`DC_DYNAMODB_TABLE`, `AWS_REGION`). | You run on AWS and have no SQL database. The ECS Express template creates the table. |

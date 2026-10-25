@@ -183,6 +183,21 @@ class TestDataProvider:
         assert opened(kind).ready() is True
 
 
+def test_sqlite_opens_in_wal_mode_with_synchronous_normal_like_the_event_store(opened, monkeypatch):
+    ran: list[str] = []
+    connect = sqlite.sqlite3.connect
+
+    def traced(*args, **kwargs):
+        db = connect(*args, **kwargs)
+        db.set_trace_callback(ran.append)
+        return db
+
+    monkeypatch.setattr(sqlite.sqlite3, "connect", traced)
+    opened("sqlite").applied_migrations()
+    assert "PRAGMA journal_mode = WAL" in ran
+    assert "PRAGMA synchronous = NORMAL" in ran
+
+
 @pytest.mark.parametrize("kind", DURABLE)
 class TestDurableDataProvider:
     def test_keeps_documents_across_a_restart(self, kind, opened, tmp_path):
