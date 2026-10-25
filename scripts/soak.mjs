@@ -16,6 +16,8 @@
  *   --streams   open /api/events streams (default 500)
  *   --rate      webhooks per second (default 50)
  *   --warmup    seconds before memory is compared (default 30)
+ *   --workers   Gunicorn workers for the Python server (default 1). More than one needs the postgres-redis
+ *               profile, because the sqlite profile's fan-out only reaches streams in its own process.
  *
  * The postgres-redis profile reads STARTER_TEST_DATABASE_URL and STARTER_TEST_REDIS_URL, which default to the
  * services in tests/services.compose.yml.
@@ -87,6 +89,7 @@ try {
     console.log(JSON.stringify({
         server: options.server,
         profile: options.profile,
+        workers: options.workers,
         streams: streams.length,
         webhooks: posted.length,
         failed,
@@ -117,21 +120,26 @@ process.exit(exitCode);
  * Reads the command line.
  *
  * @param {string[]} argv The arguments after the script name.
- * @returns {{ profile: string, server: string, duration: number, streams: number, rate: number, warmup: number }} The options.
+ * @returns {{ profile: string, server: string, duration: number, streams: number, rate: number, warmup: number, workers: number }} The options.
  */
 function readOptions(argv) {
-    const out = { profile: 'sqlite', server: 'node', duration: 600, streams: 500, rate: 50, warmup: 30 };
+    const out = { profile: 'sqlite', server: 'node', duration: 600, streams: 500, rate: 50, warmup: 30, workers: 1 };
     for (let i = 0; i < argv.length; i += 2) {
         const key = argv[i].replace(/^--/, '');
         if (!(key in out) || argv[i + 1] === undefined) {
-            console.error('Usage: node scripts/soak.mjs [--profile sqlite|postgres-redis] [--server node|python] [--duration s] [--streams n] [--rate n] [--warmup s]');
+            console.error('Usage: node scripts/soak.mjs [--profile sqlite|postgres-redis] [--server node|python] [--duration s] [--streams n] [--rate n] [--warmup s] [--workers n]');
             process.exit(2);
         }
         out[key] = typeof out[key] === 'number' ? Number(argv[i + 1]) : argv[i + 1];
     }
     if (!['sqlite', 'postgres-redis'].includes(out.profile) || !['node', 'python'].includes(out.server)
-        || [out.duration, out.streams, out.rate, out.warmup].some((n) => !Number.isFinite(n) || n < 0)) {
+        || [out.duration, out.streams, out.rate, out.warmup].some((n) => !Number.isFinite(n) || n < 0)
+        || !Number.isInteger(out.workers) || out.workers < 1) {
         console.error('Unknown profile or server, or a number that is not valid.');
+        process.exit(2);
+    }
+    if (out.workers > 1 && (out.server !== 'python' || out.profile !== 'postgres-redis')) {
+        console.error('--workers above 1 needs --server python and --profile postgres-redis.');
         process.exit(2);
     }
     return out;
@@ -180,8 +188,10 @@ async function startServer() {
     } else {
         cwd = path.join(ROOT, 'server', 'python');
         const venv = path.join(cwd, '.venv', 'bin', 'python');
-        // One thread holds each open stream, so the pool has to be as large as the number of streams.
+        // One thread holds each open stream. Workers share one listening socket and nothing spreads the
+        // streams evenly between them, so every worker's pool must be able to hold all of them.
         env.GUNICORN_THREADS = String(options.streams + 50);
+        env.WEB_CONCURRENCY = String(options.workers);
         [command, args] = [fs.existsSync(venv) ? venv : 'python3', ['-m', 'gunicorn', '-c', 'gunicorn.conf.py', 'starter_crm.wsgi:app']];
     }
     const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });

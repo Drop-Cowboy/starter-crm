@@ -163,13 +163,24 @@ Sentry and OpenTelemetry recipes.
 
 ## Load behavior we measured
 
-A weekly soak (`npm run soak`, `.github/workflows/soak.yml`) opens 500
-live streams and posts 50 webhooks a second for 10 minutes. The Node server acknowledges every
-webhook well under a second and delivers every event once the queue drains,
-with memory flat. The Python server (Gunicorn, Postgres, Redis, BullMQ) at 500
-streams and 50 events a second shows multi-second delivery lag, because one
-interpreter lock serializes the fan-out to every stream. If you expect that load, use the Node server,
-or run the soak against your own setup first.
+A weekly soak (`npm run soak`, `.github/workflows/soak.yml`) posts 50
+webhooks a second for 10 minutes to a server holding open live streams, on a
+four-CPU GitHub runner. It passes when every webhook is acknowledged within a
+second at p99, every stream receives every event, and memory stays flat.
+
+- **Node** holds 500 streams on one process, with either sqlite or Postgres,
+  Redis and BullMQ.
+- **Python with Postgres and Redis** holds 500 streams with four Gunicorn
+  workers (`WEB_CONCURRENCY=4`). One Python process runs one thread at a time,
+  so a single worker falls behind at this load. Run one worker per CPU, which
+  is safe because the Redis fan-out reaches every worker.
+- **Python with sqlite** holds 200 streams on one process. The soak uses the
+  local fan-out (`DC_FANOUT=local`), which only reaches streams in its own
+  process, so it cannot add workers. For more, use the Node server or move to
+  Postgres and Redis.
+
+To check your own numbers, run `npm run soak -- --server python --profile
+postgres-redis --workers 4 --streams 800` against your setup first.
 
 ## Reporting a security problem
 

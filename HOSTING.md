@@ -121,9 +121,10 @@ threads to your expected open streams plus a margin. Raise `WEB_CONCURRENCY`
 only with a shared event store (`postgres`, `redis`, or `sqlite` on one
 machine) and a fan-out that reaches every worker. Python threads share one
 interpreter lock, so a Python server delivers a burst of events to hundreds of
-streams more slowly than the Node server does (see "What to alert on" in
-`PRODUCTION.md`). It writes no access log, because Gunicorn's logs the raw
-request line and a site token can sit in the query string of the event stream.
+streams more slowly than the Node server does. "Load behavior we measured" in
+`PRODUCTION.md` gives the stream counts each setup holds. It writes no access
+log, because Gunicorn's logs the raw request line and a site token can sit in
+the query string of the event stream.
 
 ### Secret managers
 

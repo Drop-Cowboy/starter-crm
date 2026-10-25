@@ -3,6 +3,10 @@
 # when a webhook takes over 1 s to acknowledge at p99, when a stream misses an event, or when memory grows.
 # The script is scripts/soak.mjs; run it by hand with --duration 30 to try a change.
 #
+# Python runs one interpreter lock per process. On Postgres and Redis it gets four Gunicorn workers, one per
+# runner CPU. The sqlite profile has to stay one process, so Python holds 200 streams there instead of 500.
+# PRODUCTION.md quotes these numbers; change both together.
+#
 # Actions are pinned to commit SHAs; the comment after each is its release.
 
 name: Starter CRM soak
@@ -30,6 +34,13 @@ jobs:
       matrix:
         server: [node, python]
         profile: [sqlite, postgres-redis]
+        include:
+          - server: python
+            profile: sqlite
+            streams: 200
+          - server: python
+            profile: postgres-redis
+            workers: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,4 +73,6 @@ jobs:
         run: docker compose -f tests/services.compose.yml up -d --wait postgres valkey
 
       - name: Run the soak
-        run: node scripts/soak.mjs --profile "${{ matrix.profile }}" --server "${{ matrix.server }}" --duration 600 --streams 500 --rate 50
+        run: >-
+          node scripts/soak.mjs --profile "${{ matrix.profile }}" --server "${{ matrix.server }}"
+          --duration 600 --streams ${{ matrix.streams || 500 }} --workers ${{ matrix.workers || 1 }} --rate 50

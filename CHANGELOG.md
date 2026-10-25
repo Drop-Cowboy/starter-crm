@@ -170,7 +170,7 @@ published as a package; a "version" here is a state of this repository.
 - **`GET /api/webhooks/status`**, a Setup page item and `npm run doctor` checks
   for handler health and for a registered webhook.
 - Compose profiles `redis` and `python-redis` (Valkey with AOF and `noeviction`,
-  plus a worker); `npm run soak` and a nightly workflow; `npm run migrate:status`.
+  plus a worker); `npm run soak` and a weekly workflow; `npm run migrate:status`.
 - Boot refuses plain-text Redis and Postgres hosts that are not local in
   production (`insecure_redis_url`, `insecure_database_url`), unless
   `DC_INSECURE_PRIVATE_SERVICES=on`.
