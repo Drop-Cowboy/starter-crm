@@ -4,7 +4,7 @@
  * that every webhook is acknowledged quickly, every stream gets every event, and memory stays flat.
  *
  * Where it sits: starter root. It starts one server itself (Node, or Python under Gunicorn) with throwaway
- * credentials on a free local port, so it never touches an account or a real webhook. The nightly workflow
+ * credentials on a free local port, so it never touches an account or a real webhook. The weekly workflow
  * runs it for 10 minutes with each profile; run it by hand with `--duration 30` to try a change.
  *
  *   node scripts/soak.mjs --profile sqlite --server node

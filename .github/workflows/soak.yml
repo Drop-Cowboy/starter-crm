@@ -1,4 +1,4 @@
-# Nightly load and soak run: 500 open event streams while 50 signed webhooks a second arrive for 10 minutes,
+# Weekly load and soak run: 500 open event streams while 50 signed webhooks a second arrive for 10 minutes,
 # once with the SQLite outbox and once with Postgres, Redis fan-out and BullMQ, for each server. A run fails
 # when a webhook takes over 1 s to acknowledge at p99, when a stream misses an event, or when memory grows.
 # The script is scripts/soak.mjs; run it by hand with --duration 30 to try a change.
@@ -9,7 +9,8 @@ name: Starter CRM soak
 
 on:
   schedule:
-    - cron: '17 3 * * *'
+    # Mondays. Run it by hand from the Actions tab after a change to the event stream or the fan-out.
+    - cron: '17 3 * * 1'
   workflow_dispatch:
 
 permissions:

@@ -163,8 +163,8 @@ Sentry and OpenTelemetry recipes.
 
 ## Load behavior we measured
 
-A nightly soak (`npm run soak`, `.github/workflows/soak.yml`) opens hundreds of
-live streams and posts webhooks for an hour. The Node server acknowledges every
+A weekly soak (`npm run soak`, `.github/workflows/soak.yml`) opens 500
+live streams and posts 50 webhooks a second for 10 minutes. The Node server acknowledges every
 webhook well under a second and delivers every event once the queue drains,
 with memory flat. The Python server (Gunicorn, Postgres, Redis, BullMQ) at 500
 streams and 50 events a second shows multi-second delivery lag, because one

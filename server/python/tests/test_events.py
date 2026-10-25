@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import queue
 import threading
 import time
+import uuid
 
 from helpers import make_client, make_config, silent_logger
 
+from starter_crm import events
 from starter_crm.events import REPLAYED_MESSAGE, sse_message
 from starter_crm.runtime import default_runtime
 
@@ -136,6 +139,66 @@ def test_a_live_event_reaches_an_open_stream_after_the_replay_and_only_once():
     assert REPLAYED_MESSAGE in seen
     assert seen.index(REPLAYED_MESSAGE) < len(seen) - 1
     assert event_of(seen[-1])["event_id"] == FIRST["event_id"]
+
+
+def remembering():
+    """A ``fresh`` check like the stream's: true the first time it sees an event id."""
+    sent = set()
+
+    def fresh(event):
+        if event["event_id"] in sent:
+            return False
+        sent.add(event["event_id"])
+        return True
+
+    return fresh
+
+
+def inbox_of(*items):
+    inbox = queue.SimpleQueue()
+    for item in items:
+        inbox.put(item)
+    return inbox
+
+
+def test_events_waiting_together_go_out_in_one_write_in_order_without_repeats():
+    inbox = inbox_of(SECOND, FIRST)
+    batch, shutdown = events._drain(inbox, FIRST, remembering())
+    assert batch == sse_message(FIRST) + sse_message(SECOND)
+    assert shutdown is False
+    assert inbox.empty()
+
+
+def test_a_shutdown_sends_what_came_before_it_and_leaves_the_rest():
+    inbox = inbox_of(events._SHUTDOWN, SECOND)
+    batch, shutdown = events._drain(inbox, FIRST, remembering())
+    assert batch == sse_message(FIRST)
+    assert shutdown is True
+    assert inbox.get_nowait() == SECOND
+
+
+def test_one_write_holds_at_most_batch_max_events():
+    waiting = [
+        {"event_id": str(uuid.uuid4()), "event": "contact.msg.received", "data": {}}
+        for _ in range(events.BATCH_MAX + 5)
+    ]
+    inbox = inbox_of(*waiting[1:])
+    batch, _ = events._drain(inbox, waiting[0], remembering())
+    assert batch.count("id: ") == events.BATCH_MAX
+    assert inbox.qsize() == 5
+
+
+def test_every_stream_shares_one_encoding_of_an_event():
+    event = public(FIRST)
+    first = events._encoded.message(event)
+    assert first == sse_message(event)
+    assert events._encoded.message(event) is first
+
+
+def test_an_event_with_a_known_id_but_new_contents_is_encoded_again():
+    events._encoded.message(public(FIRST))
+    replayed = dict(public(FIRST), attempt=2)
+    assert events._encoded.message(replayed) == sse_message(replayed)
 
 
 def test_the_stream_closes_itself_at_the_cap_with_a_short_retry():

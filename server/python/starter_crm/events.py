@@ -15,6 +15,10 @@ few seconds, by design).
 limit; the browser reconnects with ``Last-Event-ID`` and misses nothing. Each open stream holds one
 server thread, so run Gunicorn with enough threads for the browsers you expect.
 
+Every open stream sends every event, so the work grows with streams times events. Only one thread runs
+Python at a time, so each event is encoded once and shared by every stream, and a stream that has fallen
+behind sends what is waiting in one write instead of one write per event.
+
 CONTRACT.md: GET /api/events, Shutdown.
 Customers replace nothing here; to react to events on the server, write handlers (``handlers.py``).
 """
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import json
 import queue
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -32,6 +37,13 @@ from flask import Response, request
 
 # How many event ids a stream remembers for de-duplication, enough to cover any replay plus its overlap.
 SEEN_CAP = 1000
+
+# How many encoded events are kept for the streams to share. A stream further behind than this
+# encodes the event again, which costs time but changes nothing it sends.
+ENCODED_CAP = 2000
+
+# The most events a stream that has fallen behind sends in one write.
+BATCH_MAX = 200
 
 # Named, so ``onmessage`` never sees it. Tells the page that what came before was history and what
 # follows is live.
@@ -51,6 +63,50 @@ def sse_message(event: dict) -> str:
         The message text, ending in a blank line.
     """
     return "id: " + event["event_id"] + "\ndata: " + json.dumps(event, separators=(",", ":")) + "\n\n"
+
+
+class _EncodedEvents:
+    """The SSE text of recent events, shared by every stream in the process.
+
+    The fan-out hands the same event object to every stream, so the object, not its id, is the key:
+    an event replayed after a failure keeps its id but not its contents. Each entry holds the event,
+    so its ``id()`` cannot be reused while the entry exists. Two streams that miss at the same moment
+    both encode it, which is harmless.
+    """
+
+    def __init__(self, cap: int) -> None:
+        """Creates an empty cache.
+
+        Args:
+            cap: How many events to keep; the oldest go first.
+        """
+        self._cap = cap
+        self._texts: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def message(self, event: dict) -> str:
+        """The event's SSE message, encoded at most once while it stays in the cache.
+
+        Args:
+            event: The public event.
+
+        Returns:
+            The same text as ``sse_message(event)``.
+        """
+        key = id(event)
+        with self._lock:
+            entry = self._texts.get(key)
+        if entry is not None and entry[0] is event:
+            return entry[1]
+        text = sse_message(event)
+        with self._lock:
+            self._texts[key] = (event, text)
+            if len(self._texts) > self._cap:
+                self._texts.popitem(last=False)
+        return text
+
+
+_encoded = _EncodedEvents(ENCODED_CAP)
 
 
 def events_view(runtime: Any, lifecycle: Any = None) -> Callable:
@@ -102,7 +158,7 @@ def _stream(
     Yields:
         SSE text chunks.
     """
-    inbox: queue.Queue = queue.Queue()
+    inbox: queue.SimpleQueue = queue.SimpleQueue()
     # The browser already has its Last-Event-ID event, so a fan-out that repeats it is not forwarded.
     seen: OrderedDict = OrderedDict([(last_event_id, True)] if last_event_id else [])
     unregister = None
@@ -146,14 +202,43 @@ def _stream(
                 if deadline is None or time.monotonic() < deadline:
                     yield ": keepalive\n\n"
                 continue
-            if item is _SHUTDOWN:
+            batch, shutdown = _drain(inbox, item, fresh)
+            if batch:
+                yield batch
+            if shutdown:
                 # Short retry so the browser reconnects after the new instance is up.
                 yield "retry: 1000\n\n"
                 return
-            if fresh(item):
-                yield sse_message(item)
     finally:
         if unsubscribe is not None:
             unsubscribe()
         if unregister is not None:
             unregister()
+
+
+def _drain(inbox: queue.SimpleQueue, first: Any, fresh: Callable[[dict], bool]) -> tuple[str, bool]:
+    """Collects the first item and whatever else is already waiting into one write.
+
+    Args:
+        inbox: The stream's inbox.
+        first: The item just taken from it.
+        fresh: Whether the stream has not sent an event yet; remembers it.
+
+    Returns:
+        The messages to send, joined (empty when every event was a repeat), and whether a shutdown
+        was found. Nothing after a shutdown is taken.
+    """
+    messages = []
+    item = first
+    while True:
+        if item is _SHUTDOWN:
+            return "".join(messages), True
+        if fresh(item):
+            messages.append(_encoded.message(item))
+            if len(messages) >= BATCH_MAX:
+                break
+        try:
+            item = inbox.get_nowait()
+        except queue.Empty:
+            break
+    return "".join(messages), False
